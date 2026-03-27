@@ -3,6 +3,7 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local Players = game:GetService("Players")
+local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local Library = {}
@@ -15,6 +16,8 @@ Library.WindowKeybind = nil
 Library.WindowVisible = true
 Library.MainFrame = nil
 Library.Notifications = {}
+Library.ConfigEnabled = false
+Library.ConfigName = "SeraphConfig"
 
 -- Configuration
 local Config = { 
@@ -104,6 +107,149 @@ local function MakeDraggable(TopBar, Object)
             Object.Position = UDim2.new(StartPosition.X.Scale, StartPosition.X.Offset + Delta.X, StartPosition.Y.Scale, StartPosition.Y.Offset + Delta.Y) 
         end
     end)
+end
+
+-- Config System
+function Library:EnableConfig(Name)
+    Library.ConfigEnabled = true
+    Library.ConfigName = Name or "SeraphConfig"
+end
+
+function Library:SaveConfig()
+    if not Library.ConfigEnabled then return end
+    
+    local Data = {}
+    for Flag, Func in pairs(Library.Flags) do
+        if Func.GetValue then
+            local Success, Value = pcall(function() return Func:GetValue() end)
+            if Success then
+                Data[Flag] = Value
+            end
+        end
+    end
+    
+    local Encoded = HttpService:JSONEncode(Data)
+    writefile(Library.ConfigName .. ".json", Encoded)
+    Library:Notify("Configuration saved", 2, "Success")
+end
+
+function Library:LoadConfig()
+    if not Library.ConfigEnabled then return end
+    
+    if isfile(Library.ConfigName .. ".json") then
+        local Success, Decoded = pcall(function()
+            return HttpService:JSONDecode(readfile(Library.ConfigName .. ".json"))
+        end)
+        
+        if Success and Decoded then
+            for Flag, Value in pairs(Decoded) do
+                if Library.Flags[Flag] and Library.Flags[Flag].SetValue then
+                    pcall(function() Library.Flags[Flag]:SetValue(Value) end)
+                end
+            end
+            Library:Notify("Configuration loaded", 2, "Success")
+        end
+    end
+end
+
+-- Confirmation Dialog
+function Library:Confirm(Title, Message, Callback)
+    local Dialog = CreateInstance("Frame", {
+        Parent = Library.MainFrame,
+        Size = UDim2.new(0, 300, 0, 150),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundTransparency = 0,
+        BorderSizePixel = 0,
+        ZIndex = 10000
+    }, {BackgroundColor3 = "PanelBg"})
+    
+    CreateInstance("UICorner", {Parent = Dialog, CornerRadius = UDim.new(0, 8)})
+    CreateInstance("UIStroke", {Parent = Dialog, Thickness = 1}, {Color = "Accent"})
+    
+    -- Backdrop
+    local Backdrop = CreateInstance("Frame", {
+        Parent = Library.MainFrame,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.5,
+        BorderSizePixel = 0,
+        ZIndex = 9999
+    })
+    
+    CreateInstance("TextLabel", {
+        Parent = Dialog,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 30),
+        Position = UDim2.new(0, 0, 0, 10),
+        FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold),
+        Text = Title or "Confirm",
+        TextSize = 16,
+        TextColor3 = Config.Colors.TextLight,
+        ZIndex = 10001
+    })
+    
+    CreateInstance("TextLabel", {
+        Parent = Dialog,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -20, 0, 50),
+        Position = UDim2.new(0, 10, 0, 45),
+        FontFace = Config.Font,
+        Text = Message or "Are you sure?",
+        TextSize = 13,
+        TextColor3 = Config.Colors.TextMain,
+        TextWrapped = true,
+        ZIndex = 10001
+    })
+    
+    local ButtonFrame = CreateInstance("Frame", {
+        Parent = Dialog,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -20, 0, 35),
+        Position = UDim2.new(0, 10, 1, -45),
+        ZIndex = 10001
+    })
+    
+    CreateInstance("UIListLayout", {
+        Parent = ButtonFrame,
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Center,
+        Padding = UDim.new(0, 10)
+    })
+    
+    local function CreateBtn(Text, Color, Result)
+        local Btn = CreateInstance("TextButton", {
+            Parent = ButtonFrame,
+            Size = UDim2.new(0.5, -5, 1, 0),
+            BackgroundColor3 = Color,
+            BorderSizePixel = 0,
+            Text = Text,
+            FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold),
+            TextSize = 13,
+            TextColor3 = Config.Colors.TextLight,
+            ZIndex = 10002
+        })
+        CreateInstance("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, 6)})
+        
+        Btn.MouseEnter:Connect(function()
+            TweenService:Create(Btn, CreateTween(0.2), {BackgroundColor3 = Color:Lerp(Config.Colors.TextLight, 0.2)}):Play()
+        end)
+        Btn.MouseLeave:Connect(function()
+            TweenService:Create(Btn, CreateTween(0.2), {BackgroundColor3 = Color}):Play()
+        end)
+        
+        Btn.MouseButton1Click:Connect(function()
+            TweenService:Create(Dialog, CreateTween(0.2), {GroupTransparency = 1}):Play()
+            TweenService:Create(Backdrop, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
+            task.wait(0.2)
+            Dialog:Destroy()
+            Backdrop:Destroy()
+            if Callback then Callback(Result) end
+        end)
+    end
+    
+    CreateBtn("No", Config.Colors.ElementBg, false)
+    CreateBtn("Yes", Config.Colors.Accent, true)
 end
 
 -- Notification System
@@ -986,6 +1132,285 @@ function Library:Window(TitleOrIcon)
                         return LabelFunctions
                     end
 
+                    -- TEXT INPUT
+                    function SectionFunctions:Input(Props)
+                        local InputFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 45)
+                        })
+                        
+                        CreateInstance("TextLabel", {
+                            Parent = InputFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Input",
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, 18)
+                        }, {TextColor3 = "TextMain"})
+                        
+                        local BoxContainer = CreateInstance("Frame", {
+                            Parent = InputFrame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, 20),
+                            Size = UDim2.new(1, 0, 0, 25)
+                        }, {BackgroundColor3 = "ElementBg"})
+                        
+                        CreateInstance("UICorner", {Parent = BoxContainer, CornerRadius = UDim.new(0, 6)})
+                        local BoxStroke = CreateInstance("UIStroke", {Parent = BoxContainer, Thickness = 1}, {Color = "Border"})
+                        
+                        local TextBox = CreateInstance("TextBox", {
+                            Parent = BoxContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, -12, 1, 0),
+                            Position = UDim2.new(0, 6, 0, 0),
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            Text = Props.Default or "",
+                            PlaceholderText = Props.Placeholder or "Enter text...",
+                            ClearTextOnFocus = false
+                        }, {TextColor3 = "TextLight", PlaceholderColor3 = "TextMain"})
+                        
+                        TextBox.Focused:Connect(function()
+                            TweenService:Create(BoxStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                        end)
+                        
+                        TextBox.FocusLost:Connect(function(EnterPressed)
+                            TweenService:Create(BoxStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                            if Props.Callback then
+                                Props.Callback(TextBox.Text, EnterPressed)
+                            end
+                        end)
+                        
+                        local InputFunctions = {}
+                        function InputFunctions:SetValue(Val) TextBox.Text = tostring(Val) end
+                        function InputFunctions:GetValue() return TextBox.Text end
+                        
+                        if Props.Flag then Library.Flags[Props.Flag] = InputFunctions end
+                        return InputFunctions
+                    end
+
+                    -- DROPDOWN
+                    function SectionFunctions:Dropdown(Props)
+                        local DropdownFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 45)
+                        })
+                        
+                        CreateInstance("TextLabel", {
+                            Parent = DropdownFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Dropdown",
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, 18)
+                        }, {TextColor3 = "TextMain"})
+                        
+                        local DropdownBtn = CreateInstance("TextButton", {
+                            Parent = DropdownFrame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, 20),
+                            Size = UDim2.new(1, 0, 0, 25),
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            Text = "  " .. (Props.Default or "Select..."),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            AutoButtonColor = false
+                        }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
+                        
+                        CreateInstance("UICorner", {Parent = DropdownBtn, CornerRadius = UDim.new(0, 6)})
+                        local BtnStroke = CreateInstance("UIStroke", {Parent = DropdownBtn, Thickness = 1}, {Color = "Border"})
+                        
+                        local Arrow = CreateInstance("ImageLabel", {
+                            Parent = DropdownBtn,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(0, 16, 0, 16),
+                            Position = UDim2.new(1, -22, 0.5, -8),
+                            Image = Config.ChevronImage,
+                            Rotation = 0
+                        }, {ImageColor3 = "TextMain"})
+                        
+                        local MenuOpen = false
+                        local SelectedOption = Props.Default
+                        local Options = Props.Options or {}
+                        
+                        local OptionFrame = CreateInstance("Frame", {
+                            Parent = DropdownFrame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, 48),
+                            Size = UDim2.new(1, 0, 0, 0),
+                            Visible = false,
+                            ZIndex = 100
+                        }, {BackgroundColor3 = "ElementBg"})
+                        
+                        CreateInstance("UICorner", {Parent = OptionFrame, CornerRadius = UDim.new(0, 6)})
+                        CreateInstance("UIStroke", {Parent = OptionFrame, Thickness = 1}, {Color = "Border"})
+                        
+                        local OptionScroll = CreateInstance("ScrollingFrame", {
+                            Parent = OptionFrame,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, -4, 1, -4),
+                            Position = UDim2.new(0, 2, 0, 2),
+                            CanvasSize = UDim2.new(0, 0, 0, 0),
+                            ScrollBarThickness = 2,
+                            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                            ZIndex = 101
+                        })
+                        
+                        local OptionList = CreateInstance("UIListLayout", {
+                            Parent = OptionScroll,
+                            Padding = UDim.new(0, 2)
+                        })
+                        
+                        local function CloseMenu()
+                            MenuOpen = false
+                            TweenService:Create(Arrow, CreateTween(0.2), {Rotation = 0}):Play()
+                            TweenService:Create(OptionFrame, CreateTween(0.2), {Size = UDim2.new(1, 0, 0, 0)}):Play()
+                            task.wait(0.2)
+                            OptionFrame.Visible = false
+                            Library.ActivePopup = nil
+                        end
+                        
+                        local function OpenMenu()
+                            Library:ClosePopups()
+                            MenuOpen = true
+                            OptionFrame.Visible = true
+                            TweenService:Create(Arrow, CreateTween(0.2), {Rotation = 180}):Play()
+                            
+                            local MaxHeight = math.min(#Options * 27 + 4, 150)
+                            TweenService:Create(OptionFrame, CreateTween(0.2), {Size = UDim2.new(1, 0, 0, MaxHeight)}):Play()
+                            
+                            Library.ActivePopup = {Element = OptionFrame, Close = CloseMenu}
+                        end
+                        
+                        DropdownBtn.MouseButton1Click:Connect(function()
+                            if MenuOpen then CloseMenu() else OpenMenu() end
+                        end)
+                        
+                        local function SelectOption(Option)
+                            SelectedOption = Option
+                            DropdownBtn.Text = "  " .. Option
+                            if Props.Callback then Props.Callback(Option) end
+                            CloseMenu()
+                        end
+                        
+                        local OptionButtons = {}
+                        
+                        local function BuildOptions()
+                            for _, Btn in ipairs(OptionButtons) do
+                                Btn:Destroy()
+                            end
+                            table.clear(OptionButtons)
+                            
+                            for _, Option in ipairs(Options) do
+                                local Btn = CreateInstance("TextButton", {
+                                    Parent = OptionScroll,
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(1, 0, 0, 25),
+                                    FontFace = Config.Font,
+                                    TextSize = 12,
+                                    Text = "  " .. Option,
+                                    TextXAlignment = Enum.TextXAlignment.Left,
+                                    AutoButtonColor = false,
+                                    ZIndex = 102
+                                }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
+                                
+                                Btn.MouseEnter:Connect(function()
+                                    TweenService:Create(Btn, CreateTween(0.1), {BackgroundColor3 = Config.Colors.PanelBg}):Play()
+                                end)
+                                Btn.MouseLeave:Connect(function()
+                                    TweenService:Create(Btn, CreateTween(0.1), {BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                end)
+                                Btn.MouseButton1Click:Connect(function() SelectOption(Option) end)
+                                
+                                table.insert(OptionButtons, Btn)
+                            end
+                        end
+                        
+                        BuildOptions()
+                        
+                        DropdownBtn.MouseEnter:Connect(function()
+                            TweenService:Create(BtnStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                        end)
+                        DropdownBtn.MouseLeave:Connect(function()
+                            TweenService:Create(BtnStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                        end)
+                        
+                        local DropdownFunctions = {}
+                        function DropdownFunctions:SetValue(Val) SelectOption(Val) end
+                        function DropdownFunctions:GetValue() return SelectedOption end
+                        function DropdownFunctions:SetOptions(NewOptions)
+                            Options = NewOptions
+                            BuildOptions()
+                        end
+                        
+                        if Props.Flag then Library.Flags[Props.Flag] = DropdownFunctions end
+                        return DropdownFunctions
+                    end
+
+                    -- PROGRESS BAR
+                    function SectionFunctions:ProgressBar(Props)
+                        local BarFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 35)
+                        })
+                        
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = BarFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Progress",
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, 18)
+                        }, {TextColor3 = "TextMain"})
+                        
+                        local PercentLabel = CreateInstance("TextLabel", {
+                            Parent = BarFrame,
+                            BackgroundTransparency = 1,
+                            Text = "0%",
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Right,
+                            Size = UDim2.new(1, 0, 0, 18)
+                        }, {TextColor3 = "TextLight"})
+                        
+                        local BarBg = CreateInstance("Frame", {
+                            Parent = BarFrame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, 20),
+                            Size = UDim2.new(1, 0, 0, 8)
+                        }, {BackgroundColor3 = "ElementBg"})
+                        
+                        CreateInstance("UICorner", {Parent = BarBg, CornerRadius = UDim.new(0, 4)})
+                        
+                        local BarFill = CreateInstance("Frame", {
+                            Parent = BarBg,
+                            BorderSizePixel = 0,
+                            Size = UDim2.new(0, 0, 1, 0)
+                        }, {BackgroundColor3 = "Accent"})
+                        
+                        CreateInstance("UICorner", {Parent = BarFill, CornerRadius = UDim.new(0, 4)})
+                        
+                        local ProgressFunctions = {}
+                        function ProgressFunctions:SetValue(Percent)
+                            local Clamped = math.clamp(Percent, 0, 100)
+                            TweenService:Create(BarFill, CreateTween(0.3), {Size = UDim2.new(Clamped / 100, 0, 1, 0)}):Play()
+                            PercentLabel.Text = math.floor(Clamped) .. "%"
+                        end
+                        function ProgressFunctions:GetValue()
+                            return BarFill.Size.X.Scale * 100
+                        end
+                        
+                        if Props.Default then ProgressFunctions:SetValue(Props.Default) end
+                        if Props.Flag then Library.Flags[Props.Flag] = ProgressFunctions end
+                        return ProgressFunctions
+                    end
+
                     -- TOGGLE
                     function SectionFunctions:Toggle(Props)
                         local ToggleFrame = CreateInstance("Frame", {
@@ -1157,129 +1582,219 @@ function Library:Window(TitleOrIcon)
                         return SliderFunctions
                     end
 
-                    -- GRID (COMPLETELY FIXED)
+                    -- GRID (FULLY FEATURED)
                     function SectionFunctions:Grid(Props)
                         local GridItems = Props.Items or {}
                         local Selected = {}
+                        local Favorites = {}
                         local MultiSelect = Props.Multi or false
-                        local CellSize = Props.CellSize or 80
-                        local Padding = Props.Padding or 8
-                        local GridHeight = Props.Height or 200
+                        local MaxColumns = Props.MaxColumns or 8
+                        local MinCellSize = Props.MinCellSize or 60
+                        local SearchFilter = ""
+                        local ShowBorders = Props.ShowBorders ~= false
                         local OnSelect = Props.Callback
+
+                        -- Calculate cell size based on container width
+                        local function CalculateCellSize()
+                            local ContainerWidth = GridFrame.AbsoluteSize.X - 20 -- padding
+                            local Columns = math.min(MaxColumns, math.max(1, math.floor(ContainerWidth / (MinCellSize + 10))))
+                            local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * 10)) / Columns)
+                            return CellWidth, Columns
+                        end
 
                         -- Main container
                         local GridFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, GridHeight),
+                            Size = UDim2.new(1, 0, 0, 0),
+                            AutomaticSize = Enum.AutomaticSize.Y,
                             BorderSizePixel = 0,
                             Visible = true,
                             ClipsDescendants = false
                         })
                         
-                        -- Scrolling frame
-                        local ScrollFrame = CreateInstance("ScrollingFrame", {
+                        -- Search Bar
+                        local SearchFrame
+                        if Props.Searchable ~= false then
+                            SearchFrame = CreateInstance("Frame", {
+                                Parent = GridFrame,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(1, 0, 0, 30),
+                                Visible = true
+                            })
+                            
+                            local SearchBox = CreateInstance("TextBox", {
+                                Parent = SearchFrame,
+                                BorderSizePixel = 0,
+                                Size = UDim2.new(1, 0, 0, 28),
+                                FontFace = Config.Font,
+                                TextSize = 12,
+                                Text = "",
+                                PlaceholderText = "🔍 Search...",
+                                ClearTextOnFocus = false
+                            }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight", PlaceholderColor3 = "TextMain"})
+                            
+                            CreateInstance("UICorner", {Parent = SearchBox, CornerRadius = UDim.new(0, 6)})
+                            local SearchStroke = CreateInstance("UIStroke", {Parent = SearchBox, Thickness = 1}, {Color = "Border"})
+                            
+                            SearchBox.Focused:Connect(function()
+                                TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                            end)
+                            SearchBox.FocusLost:Connect(function()
+                                TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                            end)
+                            
+                            SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                                SearchFilter = SearchBox.Text:lower()
+                                RefreshGrid()
+                            end)
+                        end
+
+                        -- Grid Container
+                        local GridContainer = CreateInstance("Frame", {
                             Parent = GridFrame,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 1, 0),
-                            Position = UDim2.new(0, 0, 0, 0),
-                            CanvasSize = UDim2.new(0, 0, 0, 0),
-                            ScrollBarThickness = 4,
-                            ScrollingDirection = Enum.ScrollingDirection.Y,
-                            AutomaticCanvasSize = Enum.AutomaticSize.Y,
-                            Visible = true,
+                            Position = UDim2.new(0, 0, 0, SearchFrame and 35 or 0),
+                            Size = UDim2.new(1, 0, 0, 0),
+                            AutomaticSize = Enum.AutomaticSize.Y,
                             BorderSizePixel = 0
-                        }, {ScrollBarImageColor3 = "Accent"})
-                        
-                        -- FIX: UIGridLayout uses CellPadding (UDim2) not Padding (UDim)
+                        })
+
                         local GridLayout = CreateInstance("UIGridLayout", {
-                            Parent = ScrollFrame,
-                            CellSize = UDim2.new(0, CellSize, 0, CellSize),
-                            CellPadding = UDim2.new(0, Padding, 0, Padding), -- FIXED: UDim2 not UDim
+                            Parent = GridContainer,
+                            CellPadding = UDim2.new(0, 10, 0, 10),
                             FillDirection = Enum.FillDirection.Horizontal,
                             HorizontalAlignment = Enum.HorizontalAlignment.Left,
                             VerticalAlignment = Enum.VerticalAlignment.Top,
                             SortOrder = Enum.SortOrder.LayoutOrder
                         })
 
+                        -- Empty State
+                        local EmptyState = CreateInstance("TextLabel", {
+                            Parent = GridContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 100),
+                            FontFace = Config.Font,
+                            TextSize = 14,
+                            Text = "No items found",
+                            TextColor3 = Config.Colors.TextMain,
+                            Visible = false
+                        })
+
                         local GridFunctions = {}
                         local CellButtons = {}
 
-                        -- Update canvas size when layout changes
-                        local function UpdateCanvasSize()
-                            if not GridLayout or not GridLayout.Parent then return end
-                            local contentSize = GridLayout.AbsoluteContentSize
-                            local newHeight = contentSize.Y + (Padding * 2)
-                            ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, newHeight)
+                        local function UpdateLayout()
+                            local CellSize = CalculateCellSize()
+                            GridLayout.CellSize = UDim2.new(0, CellSize, 0, CellSize)
                         end
-                        
-                        GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UpdateCanvasSize)
+
+                        local function FilterItems()
+                            local Filtered = {}
+                            for _, Item in ipairs(GridItems) do
+                                if SearchFilter == "" or (Item.Name and Item.Name:lower():find(SearchFilter)) then
+                                    table.insert(Filtered, Item)
+                                end
+                            end
+                            return Filtered
+                        end
+
+                        local function RefreshGrid()
+                            -- Clear existing
+                            for _, Cell in ipairs(CellButtons) do
+                                Cell.Frame:Destroy()
+                            end
+                            table.clear(CellButtons)
+
+                            local Filtered = FilterItems()
+                            
+                            -- Show/hide empty state
+                            if #Filtered == 0 then
+                                EmptyState.Visible = true
+                                GridContainer.Size = UDim2.new(1, 0, 0, 100)
+                                return
+                            else
+                                EmptyState.Visible = false
+                            end
+
+                            -- Rebuild cells
+                            for Index, Item in ipairs(Filtered) do
+                                CreateCell(Item, Index)
+                            end
+                            
+                            UpdateLayout()
+                        end
 
                         local function UpdateSelection(Item, IsSelected, CellBtn)
                             if IsSelected then
                                 if not MultiSelect then
-                                    local toRemove = {}
                                     for _, sel in ipairs(Selected) do
                                         if sel ~= Item then
-                                            table.insert(toRemove, sel)
+                                            local idx = table.find(Selected, sel)
+                                            if idx then table.remove(Selected, idx) end
                                         end
                                     end
-                                    for _, rem in ipairs(toRemove) do
-                                        local idx = table.find(Selected, rem)
-                                        if idx then table.remove(Selected, idx) end
-                                    end
-                                    
                                     for _, Btn in ipairs(CellButtons) do
                                         if Btn.Item ~= Item then
                                             TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3}):Play()
-                                            TweenService:Create(Btn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                                            if Btn.Checkmark then
-                                                Btn.Checkmark.Visible = false
-                                            end
+                                            Btn.Frame.BackgroundColor3 = Config.Colors.ElementBg
+                                            if Btn.Checkmark then Btn.Checkmark.Visible = false end
                                         end
                                     end
                                 end
                                 if not table.find(Selected, Item) then
                                     table.insert(Selected, Item)
                                 end
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.1}):Play()
-                                TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundColor3 = Config.Colors.Accent}):Play()
-                                if CellBtn.Checkmark then
-                                    CellBtn.Checkmark.Visible = true
-                                end
+                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.1, BackgroundColor3 = Config.Colors.Accent}):Play()
+                                if CellBtn.Checkmark then CellBtn.Checkmark.Visible = true end
                             else
                                 local idx = table.find(Selected, Item)
                                 if idx then table.remove(Selected, idx) end
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3}):Play()
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundColor3 = Config.Colors.ElementBg}):Play()
-                                TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                                if CellBtn.Checkmark then
-                                    CellBtn.Checkmark.Visible = false
-                                end
+                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3, BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                if CellBtn.Checkmark then CellBtn.Checkmark.Visible = false end
                             end
                             if OnSelect then OnSelect(Selected, Item, IsSelected) end
                         end
 
-                        local function CreateCell(Item, Index)
+                        local function ToggleFavorite(Item, StarIcon)
+                            local IsFav = not (Favorites[Item.Name] == true)
+                            Favorites[Item.Name] = IsFav
+                            if IsFav then
+                                TweenService:Create(StarIcon, CreateTween(0.2), {TextColor3 = Config.Colors.Warning}):Play()
+                                StarIcon.Text = "★"
+                            else
+                                TweenService:Create(StarIcon, CreateTween(0.2), {TextColor3 = Config.Colors.TextMain}):Play()
+                                StarIcon.Text = "☆"
+                            end
+                        end
+
+                        function CreateCell(Item, Index)
+                            local CellSize = CalculateCellSize()
+                            
                             local CellBtn = CreateInstance("TextButton", {
-                                Parent = ScrollFrame,
+                                Parent = GridContainer,
                                 BackgroundTransparency = 0.3,
                                 BorderSizePixel = 0,
                                 LayoutOrder = Index,
                                 AutoButtonColor = false,
                                 Text = "",
-                                Visible = true
+                                Visible = true,
+                                Size = UDim2.new(0, CellSize, 0, CellSize)
                             }, {BackgroundColor3 = "ElementBg"})
                             
                             CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 8)})
                             
-                            local Stroke = CreateInstance("UIStroke", {
-                                Parent = CellBtn, 
-                                Thickness = 1.5,
-                                Color = Config.Colors.Border
-                            })
+                            -- Optional Border
+                            local Stroke
+                            if ShowBorders then
+                                Stroke = CreateInstance("UIStroke", {
+                                    Parent = CellBtn, 
+                                    Thickness = 1.5,
+                                    Color = Config.Colors.Border
+                                })
+                            end
                             
+                            -- Checkmark
                             local Checkmark = CreateInstance("TextLabel", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
@@ -1294,11 +1809,30 @@ function Library:Window(TitleOrIcon)
                                 ZIndex = 5
                             })
                             
+                            -- Favorite Star
+                            local StarBtn = CreateInstance("TextButton", {
+                                Parent = CellBtn,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(0, 20, 0, 20),
+                                Position = UDim2.new(0, 2, 0, 0),
+                                FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
+                                Text = Favorites[Item.Name] and "★" or "☆",
+                                TextSize = 16,
+                                TextColor3 = Favorites[Item.Name] and Config.Colors.Warning or Config.Colors.TextMain,
+                                ZIndex = 6,
+                                AutoButtonColor = false
+                            })
+                            
+                            StarBtn.MouseButton1Click:Connect(function()
+                                ToggleFavorite(Item, StarBtn)
+                            end)
+                            
+                            -- Image
                             local ImgContainer = CreateInstance("Frame", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(0.7, 0, 0.6, 0),
-                                Position = UDim2.new(0.15, 0, 0.1, 0),
+                                Size = UDim2.new(0.7, 0, 0.5, 0),
+                                Position = UDim2.new(0.15, 0, 0.15, 0),
                                 BorderSizePixel = 0
                             })
                             
@@ -1310,42 +1844,34 @@ function Library:Window(TitleOrIcon)
                                     Image = Item.Image,
                                     ScaleType = Enum.ScaleType.Fit
                                 })
-                            else
-                                local Placeholder = CreateInstance("TextLabel", {
-                                    Parent = ImgContainer,
-                                    BackgroundTransparency = 1,
-                                    Size = UDim2.new(1, 0, 1, 0),
-                                    FontFace = Config.Font,
-                                    Text = "📦",
-                                    TextSize = 32,
-                                    TextColor3 = Config.Colors.TextMain
-                                })
                             end
                             
+                            -- Name
                             local NameLabel = CreateInstance("TextLabel", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(1, -8, 0, 20),
-                                Position = UDim2.new(0, 4, 1, -24),
+                                Size = UDim2.new(1, -4, 0, 20),
+                                Position = UDim2.new(0, 2, 1, -22),
                                 FontFace = Config.Font,
-                                TextSize = 11,
+                                TextSize = 10,
                                 Text = Item.Name or "Item",
                                 TextXAlignment = Enum.TextXAlignment.Center,
                                 TextWrapped = true,
                                 TextColor3 = Config.Colors.TextLight
                             })
                             
+                            -- Hover
                             CellBtn.MouseEnter:Connect(function()
                                 if not table.find(Selected, Item) then
                                     TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.15}):Play()
-                                    TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Accent}):Play()
+                                    if Stroke then TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Accent}):Play() end
                                 end
                             end)
                             
                             CellBtn.MouseLeave:Connect(function()
                                 if not table.find(Selected, Item) then
                                     TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.3}):Play()
-                                    TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Border}):Play()
+                                    if Stroke then TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Border}):Play() end
                                 end
                             end)
                             
@@ -1367,39 +1893,24 @@ function Library:Window(TitleOrIcon)
                             }
                             table.insert(CellButtons, CellData)
                             
+                            -- Default selection
                             if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
-                                task.defer(function() 
-                                    UpdateSelection(Item, true, CellData) 
-                                end)
+                                task.defer(function() UpdateSelection(Item, true, CellData) end)
                             end
-                            
-                            return CellData
                         end
 
-                        -- Build grid
-                        for Index, Item in ipairs(GridItems) do
-                            CreateCell(Item, Index)
-                        end
+                        -- Initial build
+                        RefreshGrid()
                         
-                        -- Force layout update
-                        task.defer(function()
-                            UpdateCanvasSize()
-                            task.wait(0.1)
-                            UpdateCanvasSize()
+                        -- Update on resize
+                        GridFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+                            UpdateLayout()
                         end)
 
+                        -- API
                         function GridFunctions:SetItems(NewItems)
-                            for _, Cell in ipairs(CellButtons) do
-                                Cell.Frame:Destroy()
-                            end
-                            table.clear(CellButtons)
-                            table.clear(Selected)
-                            
                             GridItems = NewItems
-                            for Index, Item in ipairs(GridItems) do
-                                CreateCell(Item, Index)
-                            end
-                            UpdateCanvasSize()
+                            RefreshGrid()
                         end
                         
                         function GridFunctions:SetSelected(Items)
@@ -1431,29 +1942,15 @@ function Library:Window(TitleOrIcon)
                             end
                         end
                         
-                        function GridFunctions:SetValue(Val)
-                            GridFunctions:SetSelected(Val)
-                        end
-                        
-                        function GridFunctions:GetValue()
-                            return GridFunctions:GetSelected()
+                        function GridFunctions:GetFavorites()
+                            local favs = {}
+                            for name, isFav in pairs(Favorites) do
+                                if isFav then table.insert(favs, name) end
+                            end
+                            return favs
                         end
 
-                        table.insert(Library.DynamicUpdates, function()
-                            for _, Cell in ipairs(CellButtons) do
-                                if table.find(Selected, Cell.Item) then
-                                    Cell.Stroke.Color = Config.Colors.Accent
-                                    Cell.Frame.BackgroundColor3 = Config.Colors.Accent
-                                else
-                                    Cell.Stroke.Color = Config.Colors.Border
-                                    Cell.Frame.BackgroundColor3 = Config.Colors.ElementBg
-                                end
-                            end
-                        end)
-                        
-                        if Props.Flag then 
-                            Library.Flags[Props.Flag] = GridFunctions 
-                        end
+                        if Props.Flag then Library.Flags[Props.Flag] = GridFunctions end
                         return GridFunctions
                     end
 
