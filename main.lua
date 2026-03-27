@@ -18,6 +18,7 @@ Library.MainFrame = nil
 Library.Notifications = {}
 Library.ConfigEnabled = false
 Library.ConfigName = "SeraphConfig"
+Library.NotificationQueue = {} -- ADDED: For notification deduplication
 
 -- Configuration
 local Config = { 
@@ -1580,28 +1581,40 @@ function Library:Window(TitleOrIcon)
                         return SliderFunctions
                     end
 
-                    -- GRID (FIXED - Search in header, proper sizing)
+                    -- GRID (FIXED - Rectangular cells, fixed checkmark, no notification spam, local storage)
                     function SectionFunctions:Grid(Props)
                         local GridItems = Props.Items or {}
                         local Selected = {}
                         local Favorites = {}
-                        local MultiSelect = Props.Multi or false
-                        local MaxColumns = Props.MaxColumns or 8
-                        local MinCellSize = Props.MinCellSize or 80
+                        local MultiSelect = Props.Multi ~= false -- NOW DEFAULTS TO TRUE
+                        local MaxColumns = Props.MaxColumns or 4 -- Reduced for wider cells
+                        local MinCellWidth = Props.MinCellWidth or 160 -- Double width
+                        local CellHeight = Props.CellHeight or 80 -- Fixed height
                         local SearchFilter = ""
                         local ShowBorders = Props.ShowBorders ~= false
                         local OnSelect = Props.Callback
                         local Searchable = Props.Searchable ~= false
 
-                        -- Add search box to section header (between title and chevron)
+                        -- Notification deduplication to prevent stacking
+                        local function NotifyOnce(Message, Type)
+                            local Key = tostring(Message)
+                            if Library.NotificationQueue[Key] then return end
+                            Library.NotificationQueue[Key] = true
+                            Library:Notify(Message, 1.2, Type)
+                            task.delay(1.2, function()
+                                Library.NotificationQueue[Key] = nil
+                            end)
+                        end
+
+                        -- Search box in header
                         if Searchable then
-                            HeaderBtn.Text = "  " .. SectionName .. " " -- Add space for padding
+                            HeaderBtn.Text = "  " .. SectionName .. " "
                             
                             SearchBox = CreateInstance("TextBox", {
                                 Parent = HeaderBtn,
                                 BackgroundTransparency = 0,
                                 Size = UDim2.new(0, 120, 0, 22),
-                                Position = UDim2.new(1, -150, 0.5, -11), -- Position before chevron
+                                Position = UDim2.new(1, -150, 0.5, -11),
                                 FontFace = Config.Font,
                                 TextSize = 11,
                                 Text = "",
@@ -1616,17 +1629,15 @@ function Library:Window(TitleOrIcon)
                             SearchBox.Focused:Connect(function()
                                 TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
                             end)
-                            SearchBox.Focused:Connect(function()
+                            SearchBox.FocusLost:Connect(function()
                                 TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
                             end)
                             
-                            -- Update search filter
                             SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
                                 SearchFilter = SearchBox.Text:lower()
                                 RefreshGrid()
                             end)
                             
-                            -- Prevent section toggle when clicking search
                             SearchBox.Focused:Connect(function()
                                 HeaderBtn.Active = false
                             end)
@@ -1646,7 +1657,6 @@ function Library:Window(TitleOrIcon)
                             ClipsDescendants = false
                         })
 
-                        -- Grid Container
                         local GridContainer = CreateInstance("Frame", {
                             Parent = GridFrame,
                             BackgroundTransparency = 1,
@@ -1665,7 +1675,6 @@ function Library:Window(TitleOrIcon)
                             SortOrder = Enum.SortOrder.LayoutOrder
                         })
 
-                        -- Empty State
                         local EmptyState = CreateInstance("TextLabel", {
                             Parent = GridContainer,
                             BackgroundTransparency = 1,
@@ -1680,13 +1689,13 @@ function Library:Window(TitleOrIcon)
                         local GridFunctions = {}
                         local CellButtons = {}
 
-                        -- Calculate cell size based on container width
+                        -- FIXED: Calculate rectangular cell size (double width)
                         local function CalculateCellSize()
-                            local ContainerWidth = GridContainer.AbsoluteSize.X - 20 -- padding
-                            if ContainerWidth <= 0 then ContainerWidth = 300 end -- fallback
-                            local Columns = math.min(MaxColumns, math.max(1, math.floor(ContainerWidth / (MinCellSize + 10))))
+                            local ContainerWidth = GridContainer.AbsoluteSize.X - 20
+                            if ContainerWidth <= 0 then ContainerWidth = 600 end
+                            local Columns = math.min(MaxColumns, math.max(1, math.floor(ContainerWidth / (MinCellWidth + 10))))
                             local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * 10)) / Columns)
-                            return CellWidth, Columns
+                            return CellWidth, CellHeight, Columns
                         end
 
                         local function FilterItems()
@@ -1700,35 +1709,28 @@ function Library:Window(TitleOrIcon)
                         end
 
                         local function RefreshGrid()
-                            -- Clear existing
                             for _, Cell in ipairs(CellButtons) do
                                 Cell.Frame:Destroy()
                             end
                             table.clear(CellButtons)
 
                             local Filtered = FilterItems()
+                            EmptyState.Visible = (#Filtered == 0)
                             
-                            -- Show/hide empty state
-                            if #Filtered == 0 then
-                                EmptyState.Visible = true
-                                return
-                            else
-                                EmptyState.Visible = false
-                            end
+                            if #Filtered == 0 then return end
 
-                            -- Rebuild cells
                             for Index, Item in ipairs(Filtered) do
                                 CreateCell(Item, Index)
                             end
                             
-                            -- Update layout
-                            local CellSize = CalculateCellSize()
-                            GridLayout.CellSize = UDim2.new(0, CellSize, 0, CellSize)
+                            local CellWidth, CellHeight = CalculateCellSize()
+                            GridLayout.CellSize = UDim2.new(0, CellWidth, 0, CellHeight)
                         end
 
                         local function UpdateSelection(Item, IsSelected, CellBtn)
                             if IsSelected then
                                 if not MultiSelect then
+                                    -- Clear others if single select
                                     for _, sel in ipairs(Selected) do
                                         if sel ~= Item then
                                             local idx = table.find(Selected, sel)
@@ -1737,27 +1739,36 @@ function Library:Window(TitleOrIcon)
                                     end
                                     for _, Btn in ipairs(CellButtons) do
                                         if Btn.Item ~= Item then
-                                            TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3}):Play()
-                                            Btn.Frame.BackgroundColor3 = Config.Colors.ElementBg
+                                            TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3, BackgroundColor3 = Config.Colors.ElementBg}):Play()
                                             if Btn.Checkmark then Btn.Checkmark.Visible = false end
-                                            if Btn.Star then
-                                                -- Keep star color consistent
-                                            end
                                         end
                                     end
                                 end
+                                
                                 if not table.find(Selected, Item) then
                                     table.insert(Selected, Item)
                                 end
+                                
                                 TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.1, BackgroundColor3 = Config.Colors.Accent}):Play()
                                 if CellBtn.Checkmark then CellBtn.Checkmark.Visible = true end
+                                
+                                NotifyOnce("Selected: " .. (Item.Name or "Item"), "Success")
                             else
                                 local idx = table.find(Selected, Item)
                                 if idx then table.remove(Selected, idx) end
+                                
                                 TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3, BackgroundColor3 = Config.Colors.ElementBg}):Play()
                                 if CellBtn.Checkmark then CellBtn.Checkmark.Visible = false end
+                                
+                                NotifyOnce("Deselected: " .. (Item.Name or "Item"), "Info")
                             end
+                            
                             if OnSelect then OnSelect(Selected, Item, IsSelected) end
+                            
+                            -- Update local flag storage
+                            if Props.Flag and Library.Flags[Props.Flag] then
+                                Library.Flags[Props.Flag].Value = Selected
+                            end
                         end
 
                         local function ToggleFavorite(Item, StarIcon)
@@ -1770,10 +1781,14 @@ function Library:Window(TitleOrIcon)
                                 TweenService:Create(StarIcon, CreateTween(0.2), {TextColor3 = Config.Colors.TextMain}):Play()
                                 StarIcon.Text = "☆"
                             end
+                            
+                            if Props.Flag and Library.Flags[Props.Flag] then
+                                Library.Flags[Props.Flag].Favorites = Favorites
+                            end
                         end
 
                         function CreateCell(Item, Index)
-                            local CellSize = CalculateCellSize()
+                            local CellWidth, CellHeight = CalculateCellSize()
                             
                             local CellBtn = CreateInstance("TextButton", {
                                 Parent = GridContainer,
@@ -1787,7 +1802,6 @@ function Library:Window(TitleOrIcon)
                             
                             CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 8)})
                             
-                            -- Optional Border
                             local Stroke
                             if ShowBorders then
                                 Stroke = CreateInstance("UIStroke", {
@@ -1797,30 +1811,30 @@ function Library:Window(TitleOrIcon)
                                 })
                             end
                             
-                            -- Checkmark
+                            -- FIXED: Checkmark positioned properly inside cell
                             local Checkmark = CreateInstance("TextLabel", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(0, 20, 0, 20),
-                                Position = UDim2.new(1, -10, 0, -5),
+                                Size = UDim2.new(0, 24, 0, 24),
+                                Position = UDim2.new(1, -12, 0, 8), -- FIXED: Top-right with padding
                                 AnchorPoint = Vector2.new(1, 0),
                                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
                                 Text = "✓",
-                                TextSize = 16,
+                                TextSize = 20,
                                 TextColor3 = Config.Colors.TextLight,
                                 Visible = false,
                                 ZIndex = 5
                             })
                             
-                            -- Favorite Star
+                            -- Star button - Top-left
                             local StarBtn = CreateInstance("TextButton", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(0, 20, 0, 20),
-                                Position = UDim2.new(0, 2, 0, 0),
+                                Size = UDim2.new(0, 24, 0, 24),
+                                Position = UDim2.new(0, 8, 0, 8),
                                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
                                 Text = Favorites[Item.Name] and "★" or "☆",
-                                TextSize = 16,
+                                TextSize = 18,
                                 TextColor3 = Favorites[Item.Name] and Config.Colors.Warning or Config.Colors.TextMain,
                                 ZIndex = 6,
                                 AutoButtonColor = false
@@ -1830,12 +1844,12 @@ function Library:Window(TitleOrIcon)
                                 ToggleFavorite(Item, StarBtn)
                             end)
                             
-                            -- Image
+                            -- Image container - Centered for rectangular cell
                             local ImgContainer = CreateInstance("Frame", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(0.7, 0, 0.5, 0),
-                                Position = UDim2.new(0.15, 0, 0.15, 0),
+                                Size = UDim2.new(0.3, 0, 0.5, 0),
+                                Position = UDim2.new(0.35, 0, 0.15, 0),
                                 BorderSizePixel = 0
                             })
                             
@@ -1849,21 +1863,21 @@ function Library:Window(TitleOrIcon)
                                 })
                             end
                             
-                            -- Name
+                            -- Name label - Bottom
                             local NameLabel = CreateInstance("TextLabel", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(1, -4, 0, 20),
-                                Position = UDim2.new(0, 2, 1, -22),
+                                Size = UDim2.new(1, -16, 0, 20),
+                                Position = UDim2.new(0, 8, 1, -28),
                                 FontFace = Config.Font,
-                                TextSize = 10,
+                                TextSize = 11,
                                 Text = Item.Name or "Item",
                                 TextXAlignment = Enum.TextXAlignment.Center,
                                 TextWrapped = true,
                                 TextColor3 = Config.Colors.TextLight
                             })
                             
-                            -- Hover
+                            -- Hover effects
                             CellBtn.MouseEnter:Connect(function()
                                 if not table.find(Selected, Item) then
                                     TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.15}):Play()
@@ -1898,24 +1912,26 @@ function Library:Window(TitleOrIcon)
                             }
                             table.insert(CellButtons, CellData)
                             
-                            -- Default selection
+                            -- Handle default selections
                             if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
-                                task.defer(function() UpdateSelection(Item, true, CellData) end)
+                                task.defer(function() 
+                                    UpdateSelection(Item, true, CellData) 
+                                end)
                             end
                         end
 
-                        -- Initial build with delay for layout
+                        -- Initialize
                         task.defer(function()
                             RefreshGrid()
                         end)
                         
-                        -- Update on resize
+                        -- Handle resize
                         GridContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-                            local CellSize = CalculateCellSize()
-                            GridLayout.CellSize = UDim2.new(0, CellSize, 0, CellSize)
+                            local CellWidth, CellHeight = CalculateCellSize()
+                            GridLayout.CellSize = UDim2.new(0, CellWidth, 0, CellHeight)
                         end)
 
-                        -- API
+                        -- API functions with local storage
                         function GridFunctions:SetItems(NewItems)
                             GridItems = NewItems
                             RefreshGrid()
@@ -1928,7 +1944,7 @@ function Library:Window(TitleOrIcon)
                             end
                             for _, Name in ipairs(Items) do
                                 for _, Cell in ipairs(CellButtons) do
-                                    if Cell.Item.Name == Name then
+                                    if Cell.Item.Name == Name or Cell.Item == Name then
                                         UpdateSelection(Cell.Item, true, Cell)
                                         break
                                     end
@@ -1963,8 +1979,31 @@ function Library:Window(TitleOrIcon)
                                 SearchBox.Visible = Visible
                             end
                         end
+                        
+                        function GridFunctions:SetValue(Val)
+                            if type(Val) == "table" then
+                                GridFunctions:SetSelected(Val)
+                            else
+                                GridFunctions:SetSelected({Val})
+                            end
+                        end
+                        
+                        function GridFunctions:GetValue()
+                            return GridFunctions:GetSelected()
+                        end
 
-                        if Props.Flag then Library.Flags[Props.Flag] = GridFunctions end
+                        -- Register with Flag system for persistence
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = {
+                                SetValue = GridFunctions.SetValue,
+                                GetValue = GridFunctions.GetValue,
+                                Value = Selected,
+                                Favorites = Favorites,
+                                GetFavorites = GridFunctions.GetFavorites,
+                                Type = "Grid"
+                            }
+                        end
+                        
                         return GridFunctions
                     end
 
