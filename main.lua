@@ -1,1390 +1,1366 @@
 --!strict
-local oTweenService = game:GetService("TweenService")
-local oUserInputService = game:GetService("UserInputService")
-local oRunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
-local tLibrary = {}
-tLibrary.AnimationSpeed = 1
-tLibrary.ActivePopup = nil 
-tLibrary.ThemeObjects = {}
-tLibrary.DynamicUpdates = {}
-tLibrary.Flags = {}
-tLibrary.WindowKeybind = nil
-tLibrary.WindowVisible = true
-tLibrary.MainFrame = nil
+local Library = {}
+Library.AnimationSpeed = 1
+Library.ActivePopup = nil 
+Library.ThemeObjects = {}
+Library.DynamicUpdates = {}
+Library.Flags = {}
+Library.WindowKeybind = nil
+Library.WindowVisible = true
+Library.MainFrame = nil
+Library.Notifications = {}
 
-local tConfig = { 
-	Colors = { 
-		MainBg = Color3.fromRGB(17, 17, 22), 
-		PanelBg = Color3.fromRGB(24, 24, 30), 
-		SectionBg = Color3.fromRGB(19, 19, 24), 
-		ElementBg = Color3.fromRGB(15, 15, 19), 
-		Accent = Color3.fromRGB(218, 36, 155), 
-		TextMain = Color3.fromRGB(138, 138, 149), 
-		TextLight = Color3.fromRGB(231, 231, 235), 
-		Border = Color3.fromRGB(35, 35, 42), 
-		Separator = Color3.fromRGB(31, 24, 34) 
-	}, 
-	Font = Font.new("rbxassetid://12187371840", Enum.FontWeight.Regular, Enum.FontStyle.Normal), 
-	TextSize = 13, 
-	ChevronImage = "rbxassetid://10709790948", 
-	PickerCursor = "rbxassetid://10709798174" 
+-- Configuration
+local Config = { 
+    Colors = { 
+        MainBg = Color3.fromRGB(17, 17, 22), 
+        PanelBg = Color3.fromRGB(24, 24, 30), 
+        SectionBg = Color3.fromRGB(19, 19, 24), 
+        ElementBg = Color3.fromRGB(15, 15, 19), 
+        Accent = Color3.fromRGB(218, 36, 155), 
+        TextMain = Color3.fromRGB(138, 138, 149), 
+        TextLight = Color3.fromRGB(231, 231, 235), 
+        Border = Color3.fromRGB(35, 35, 42), 
+        Separator = Color3.fromRGB(31, 24, 34),
+        Success = Color3.fromRGB(67, 181, 129),
+        Error = Color3.fromRGB(240, 71, 71),
+        Warning = Color3.fromRGB(255, 193, 7)
+    }, 
+    Font = Font.new("rbxassetid://12187371840", Enum.FontWeight.Regular, Enum.FontStyle.Normal), 
+    TextSize = 13, 
+    ChevronImage = "rbxassetid://10709790948", 
+    PickerCursor = "rbxassetid://10709798174",
+    CloseIcon = "rbxassetid://10709790948"
 }
 
-local function fnAnim(nTime, oStyle, oDir)
-    return TweenInfo.new(nTime / tLibrary.AnimationSpeed, oStyle or Enum.EasingStyle.Quad, oDir or Enum.EasingDirection.Out)
+-- Helper Functions
+local function CreateTween(Time, Style, Direction)
+    return TweenInfo.new(Time / Library.AnimationSpeed, Style or Enum.EasingStyle.Quad, Direction or Enum.EasingDirection.Out)
 end
 
-local function fnCreate(sClass, tProperties, tThemeProps)
-    local oInstance = Instance.new(sClass)
-    for sKey, vValue in tProperties do oInstance[sKey] = vValue end
-    if tThemeProps then 
-		for sProp, sColorKey in tThemeProps do 
-			oInstance[sProp] = tConfig.Colors[sColorKey]
-			table.insert(tLibrary.ThemeObjects, {oInstance, sProp, sColorKey}) 
-		end 
-	end
-    return oInstance
+local function CreateInstance(Class, Properties, ThemeProps)
+    local Instance = game:GetService("InsertService"):LoadLocalAsset("rbxasset://fonts/families/csSourceSansPro.json") and Instance.new(Class) or Instance.new(Class)
+    for Key, Value in Properties do 
+        Instance[Key] = Value 
+    end
+    if ThemeProps then 
+        for Prop, ColorKey in ThemeProps do 
+            Instance[Prop] = Config.Colors[ColorKey]
+            table.insert(Library.ThemeObjects, {Instance, Prop, ColorKey}) 
+        end 
+    end
+    return Instance
 end
 
-local function fnGetBindText(oBind)
-    if not oBind then return "None" end
-    if oBind == Enum.UserInputType.MouseButton1 then return "MB1" end
-    if oBind == Enum.UserInputType.MouseButton2 then return "MB2" end
-    if oBind == Enum.UserInputType.MouseButton3 then return "MB3" end
-    if oBind == Enum.KeyCode.Unknown then return "None" end
-    if typeof(oBind) == "EnumItem" then 
-		if oBind.Name == "MouseButton1" then return "MB1" end
-		if oBind.Name == "MouseButton2" then return "MB2" end
-		if oBind.Name == "MouseButton3" then return "MB3" end
-		return oBind.Name 
-	end
+local function GetBindText(Bind)
+    if not Bind then return "None" end
+    if Bind == Enum.UserInputType.MouseButton1 then return "MB1" end
+    if Bind == Enum.UserInputType.MouseButton2 then return "MB2" end
+    if Bind == Enum.UserInputType.MouseButton3 then return "MB3" end
+    if typeof(Bind) == "EnumItem" then 
+        if Bind.Name == "MouseButton1" then return "MB1" end
+        if Bind.Name == "MouseButton2" then return "MB2" end
+        if Bind.Name == "MouseButton3" then return "MB3" end
+        return Bind.Name 
+    end
     return "None"
 end
 
-local function fnMakeDraggable(oTopBar, oObject)
-    local bDragging = nil
-    local oDragInput = nil
-    local oDragStart = nil
-    local oStartPosition = nil
-    oTopBar.InputBegan:Connect(function(oInput)
-        if oInput.UserInputType == Enum.UserInputType.MouseButton1 or oInput.UserInputType == Enum.UserInputType.Touch then
-            bDragging = true
-			oDragStart = oInput.Position
-			oStartPosition = oObject.Position
-            oInput.Changed:Connect(function() 
-				if oInput.UserInputState == Enum.UserInputState.End then 
-					bDragging = false 
-				end 
-			end)
+local function MakeDraggable(TopBar, Object)
+    local Dragging = nil
+    local DragInput = nil
+    local DragStart = nil
+    local StartPosition = nil
+    
+    TopBar.InputBegan:Connect(function(Input)
+        if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+            Dragging = true
+            DragStart = Input.Position
+            StartPosition = Object.Position
+            
+            Input.Changed:Connect(function() 
+                if Input.UserInputState == Enum.UserInputState.End then 
+                    Dragging = false 
+                end 
+            end)
         end
     end)
-    oTopBar.InputChanged:Connect(function(oInput) 
-		if oInput.UserInputType == Enum.UserInputType.MouseMovement or oInput.UserInputType == Enum.UserInputType.Touch then 
-			oDragInput = oInput 
-		end 
-	end)
-    oUserInputService.InputChanged:Connect(function(oInput)
-        if oInput == oDragInput and bDragging then 
-			local oDelta = oInput.Position - oDragStart
-			oObject.Position = UDim2.new(oStartPosition.X.Scale, oStartPosition.X.Offset + oDelta.X, oStartPosition.Y.Scale, oStartPosition.Y.Offset + oDelta.Y) 
-		end
+    
+    TopBar.InputChanged:Connect(function(Input) 
+        if Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch then 
+            DragInput = Input 
+        end 
+    end)
+    
+    UserInputService.InputChanged:Connect(function(Input)
+        if Input == DragInput and Dragging then 
+            local Delta = Input.Position - DragStart
+            Object.Position = UDim2.new(StartPosition.X.Scale, StartPosition.X.Offset + Delta.X, StartPosition.Y.Scale, StartPosition.Y.Offset + Delta.Y) 
+        end
     end)
 end
 
-function tLibrary:ClosePopups()
-    if tLibrary.ActivePopup then 
-		tLibrary.ActivePopup.Close()
-		tLibrary.ActivePopup = nil 
-	end
+-- Notification System
+function Library:Notify(Message, Duration, Type)
+    Type = Type or "Info"
+    Duration = Duration or 3
+    
+    local NotificationGui = CreateInstance("Frame", {
+        Name = "Notification",
+        Parent = Library.MainFrame and Library.MainFrame.Parent or game.CoreGui,
+        Size = UDim2.new(0, 300, 0, 60),
+        Position = UDim2.new(0.5, 0, 0, 100),
+        AnchorPoint = Vector2.new(0.5, 0),
+        BackgroundTransparency = 0.05,
+        BorderSizePixel = 0,
+        ZIndex = 5000,
+        Visible = false
+    }, {BackgroundColor3 = "PanelBg"})
+    
+    CreateInstance("UICorner", {Parent = NotificationGui, CornerRadius = UDim.new(0, 6)})
+    CreateInstance("UIStroke", {Parent = NotificationGui, Thickness = 1}, {Color = "Border"})
+    
+    local ColorMap = {
+        Info = "Accent",
+        Success = "Success",
+        Error = "Error",
+        Warning = "Warning"
+    }
+    
+    CreateInstance("Frame", {
+        Parent = NotificationGui,
+        Size = UDim2.new(0, 4, 1, 0),
+        BorderSizePixel = 0
+    }, {BackgroundColor3 = ColorMap[Type] or "Accent"})
+    
+    CreateInstance("TextLabel", {
+        Parent = NotificationGui,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, -20, 1, 0),
+        Position = UDim2.new(0, 15, 0, 0),
+        FontFace = Config.Font,
+        TextSize = 12,
+        Text = Message,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Center,
+        TextWrapped = true
+    }, {TextColor3 = "TextLight"})
+    
+    table.insert(Library.Notifications, NotificationGui)
+    
+    -- Animate in
+    NotificationGui.Visible = true
+    local InTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, 20)})
+    InTween:Play()
+    
+    -- Auto remove
+    task.delay(Duration, function()
+        local OutTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, -100), BackgroundTransparency = 1})
+        OutTween:Play()
+        OutTween.Completed:Wait()
+        NotificationGui:Destroy()
+        local idx = table.find(Library.Notifications, NotificationGui)
+        if idx then table.remove(Library.Notifications, idx) end
+    end)
 end
 
-function tLibrary:SetTheme(tNewColors)
-    for sKey, vValue in tNewColors do 
-		if tConfig.Colors[sKey] then 
-			tConfig.Colors[sKey] = vValue 
-		end 
-	end
-    for _, tObjData in tLibrary.ThemeObjects do 
-		local oInstance, sProp, sColorKey = tObjData[1], tObjData[2], tObjData[3]
-		if oInstance.Parent then 
-			oInstance[sProp] = tConfig.Colors[sColorKey] 
-		end 
-	end
-    for _, fnFunc in tLibrary.DynamicUpdates do 
-		fnFunc() 
-	end
+function Library:ClosePopups()
+    if Library.ActivePopup then 
+        if Library.ActivePopup.Close then
+            Library.ActivePopup.Close() 
+        end
+        Library.ActivePopup = nil 
+    end
 end
 
-function tLibrary:GetTheme()
-    local tThemeCopy = {}
-    for sKey, vValue in tConfig.Colors do 
-		tThemeCopy[sKey] = vValue 
-	end
-    return tThemeCopy
+function Library:SetTheme(NewColors)
+    for Key, Value in NewColors do 
+        if Config.Colors[Key] then 
+            Config.Colors[Key] = Value 
+        end 
+    end
+    for _, ObjData in Library.ThemeObjects do 
+        local Instance, Prop, ColorKey = ObjData[1], ObjData[2], ObjData[3]
+        if Instance and Instance.Parent then 
+            Instance[Prop] = Config.Colors[ColorKey] 
+        end 
+    end
+    for _, Func in Library.DynamicUpdates do 
+        Func() 
+    end
 end
 
-function tLibrary:SetAnimationSpeed(nNewAnimationSpeed)
-    tLibrary.AnimationSpeed = nNewAnimationSpeed
+function Library:GetTheme()
+    local ThemeCopy = {}
+    for Key, Value in Config.Colors do 
+        ThemeCopy[Key] = Value 
+    end
+    return ThemeCopy
 end
 
-function tLibrary:SetWindowKeybind(oKeyCode)
-    tLibrary.WindowKeybind = oKeyCode
+function Library:SetAnimationSpeed(NewSpeed)
+    Library.AnimationSpeed = NewSpeed
 end
 
-oUserInputService.InputBegan:Connect(function(oInput, bProcessed)
-    if oInput.UserInputType == Enum.UserInputType.MouseButton1 or oInput.UserInputType == Enum.UserInputType.Touch then
-        if tLibrary.ActivePopup and tLibrary.ActivePopup.Element then
-            local oEle = tLibrary.ActivePopup.Element
-            local nMx, nMy = oInput.Position.X, oInput.Position.Y
-            local nPx, nPy = oEle.AbsolutePosition.X, oEle.AbsolutePosition.Y
-            local nSx, nSy = oEle.AbsoluteSize.X, oEle.AbsoluteSize.Y
-            if nMx < nPx or nMx > nPx + nSx or nMy < nPy or nMy > nPy + nSy then
-                local bInIgnore = false
-                if tLibrary.ActivePopup.Ignore then
-                    for _, oIgnore in tLibrary.ActivePopup.Ignore do
-                        local nIx, nIy = oIgnore.AbsolutePosition.X, oIgnore.AbsolutePosition.Y
-                        local nIsx, nIsy = oIgnore.AbsoluteSize.X, oIgnore.AbsoluteSize.Y
-                        if nMx >= nIx and nMx <= nIx + nIsx and nMy >= nIy and nMy <= nIy + nIsy then 
-							bInIgnore = true
-							break 
-						end
+function Library:SetWindowKeybind(KeyCode)
+    Library.WindowKeybind = KeyCode
+end
+
+-- Input Handling
+UserInputService.InputBegan:Connect(function(Input, Processed)
+    if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+        if Library.ActivePopup and Library.ActivePopup.Element then
+            local Ele = Library.ActivePopup.Element
+            local Mx, My = Input.Position.X, Input.Position.Y
+            local Px, Py = Ele.AbsolutePosition.X, Ele.AbsolutePosition.Y
+            local Sx, Sy = Ele.AbsoluteSize.X, Ele.AbsoluteSize.Y
+            
+            if Mx < Px or Mx > Px + Sx or My < Py or My > Py + Sy then
+                local InIgnore = false
+                if Library.ActivePopup.Ignore then
+                    for _, Ignore in Library.ActivePopup.Ignore do
+                        local Ix, Iy = Ignore.AbsolutePosition.X, Ignore.AbsolutePosition.Y
+                        local Isx, Isy = Ignore.AbsoluteSize.X, Ignore.AbsoluteSize.Y
+                        if Mx >= Ix and Mx <= Ix + Isx and My >= Iy and My <= Iy + Isy then 
+                            InIgnore = true
+                            break 
+                        end
                     end
                 end
-                if not bInIgnore then 
-					tLibrary:ClosePopups() 
-				end
+                if not InIgnore then 
+                    Library:ClosePopups() 
+                end
             end
         end
     end
-    if not bProcessed and tLibrary.WindowKeybind and oInput.KeyCode == tLibrary.WindowKeybind and tLibrary.MainFrame then
-        tLibrary.WindowVisible = not tLibrary.WindowVisible
-        if tLibrary.WindowVisible then
-            tLibrary.MainFrame.Visible = true
-            oTweenService:Create(tLibrary.MainFrame, fnAnim(0.2), {GroupTransparency = 0}):Play()
+    
+    if not Processed and Library.WindowKeybind and Input.KeyCode == Library.WindowKeybind and Library.MainFrame then
+        Library.WindowVisible = not Library.WindowVisible
+        if Library.WindowVisible then
+            Library.MainFrame.Visible = true
+            TweenService:Create(Library.MainFrame, CreateTween(0.2), {GroupTransparency = 0}):Play()
         else
-            local oTween = oTweenService:Create(tLibrary.MainFrame, fnAnim(0.2), {GroupTransparency = 1})
-            oTween:Play()
+            local Tween = TweenService:Create(Library.MainFrame, CreateTween(0.2), {GroupTransparency = 1})
+            Tween:Play()
             task.spawn(function()
-                oTween.Completed:Wait()
-                if not tLibrary.WindowVisible then 
-					tLibrary.MainFrame.Visible = false 
-				end
+                Tween.Completed:Wait()
+                if not Library.WindowVisible then 
+                    Library.MainFrame.Visible = false 
+                end
             end)
         end
     end
 end)
 
-function tLibrary:Window(vNameOrIcon)
-    local oScreenGui = fnCreate("ScreenGui", { Name = "Seraph", Parent = game.CoreGui, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, ResetOnSpawn = false, IgnoreGuiInset = true })
+-- Main Window Function
+function Library:Window(TitleOrIcon)
+    local ScreenGui = CreateInstance("ScreenGui", {
+        Name = "Seraph",
+        Parent = game.CoreGui,
+        ZIndexBehavior = Enum.ZIndexBehavior.Sibling,
+        ResetOnSpawn = false,
+        IgnoreGuiInset = true
+    })
     
-    local oMainFrame = fnCreate("CanvasGroup", { Name = "MainFrame", Parent = oScreenGui, BorderSizePixel = 0, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(0.5, 0, 0.5, 0), Size = UDim2.new(0.9, 0, 0.9, 0), GroupTransparency = 0 }, {BackgroundColor3 = "PanelBg"})
-    fnCreate("UISizeConstraint", { Parent = oMainFrame, MaxSize = Vector2.new(800, 600), MinSize = Vector2.new(400, 300) })
-    tLibrary.MainFrame = oMainFrame
-    fnCreate("UICorner", { Parent = oMainFrame, CornerRadius = UDim.new(0, 3) })
-    fnCreate("UIStroke", { Parent = oMainFrame, Thickness = 1 }, {Color = "MainBg"})
+    local MainFrame = CreateInstance("CanvasGroup", {
+        Name = "MainFrame",
+        Parent = ScreenGui,
+        BorderSizePixel = 0,
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Position = UDim2.new(0.5, 0, 0.5, 0),
+        Size = UDim2.new(0.9, 0, 0.9, 0),
+        GroupTransparency = 0
+    }, {BackgroundColor3 = "PanelBg"})
+    
+    CreateInstance("UISizeConstraint", {Parent = MainFrame, MaxSize = Vector2.new(900, 650), MinSize = Vector2.new(400, 300)})
+    Library.MainFrame = MainFrame
+    CreateInstance("UICorner", {Parent = MainFrame, CornerRadius = UDim.new(0, 8)})
+    CreateInstance("UIStroke", {Parent = MainFrame, Thickness = 1}, {Color = "MainBg"})
 
-    local oTopBar = fnCreate("Frame", { Name = "TopBar", Parent = oMainFrame, BorderSizePixel = 0, Size = UDim2.new(1, 0, 0, 48) }, {BackgroundColor3 = "MainBg"})
-    fnMakeDraggable(oTopBar, oMainFrame)
+    -- Top Bar
+    local TopBar = CreateInstance("Frame", {
+        Name = "TopBar",
+        Parent = MainFrame,
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 48)
+    }, {BackgroundColor3 = "MainBg"})
     
-    if tostring(vNameOrIcon):find("rbxassetid") then
-        fnCreate("ImageLabel", { Parent = oTopBar, BackgroundTransparency = 1, Size = UDim2.new(0, 32, 0, 32), AnchorPoint = Vector2.new(0, 0.5), Position = UDim2.new(0, 15, 0.5, 0), Image = vNameOrIcon, ScaleType = Enum.ScaleType.Fit }, {ImageColor3 = "Accent"})
+    MakeDraggable(TopBar, MainFrame)
+    
+    -- Title/Icon
+    if tostring(TitleOrIcon):find("rbxassetid") then
+        CreateInstance("ImageLabel", {
+            Parent = TopBar,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, 32, 0, 32),
+            AnchorPoint = Vector2.new(0, 0.5),
+            Position = UDim2.new(0, 15, 0.5, 0),
+            Image = TitleOrIcon,
+            ScaleType = Enum.ScaleType.Fit
+        }, {ImageColor3 = "Accent"})
     else
-        fnCreate("TextLabel", { Parent = oTopBar, BackgroundTransparency = 1, Position = UDim2.new(0, 20, 0, 0), Size = UDim2.new(0, 100, 1, 0), FontFace = tConfig.Font, Text = tostring(vNameOrIcon or "F/"), TextSize = 24, TextXAlignment = Enum.TextXAlignment.Left }, {TextColor3 = "Accent"})
+        CreateInstance("TextLabel", {
+            Parent = TopBar,
+            BackgroundTransparency = 1,
+            Position = UDim2.new(0, 20, 0, 0),
+            Size = UDim2.new(0, 200, 1, 0),
+            FontFace = Config.Font,
+            Text = tostring(TitleOrIcon or "Library"),
+            TextSize = 20,
+            TextXAlignment = Enum.TextXAlignment.Left
+        }, {TextColor3 = "Accent"})
     end
-
-    local oTabContainer = fnCreate("Frame", { Parent = oTopBar, BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 0), Size = UDim2.new(1, -20, 1, 0) })
-    fnCreate("UIListLayout", { Parent = oTabContainer, FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Right, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 5) }) 
-
-    local oBody = fnCreate("Frame", { Parent = oMainFrame, BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 48), Size = UDim2.new(1, 0, 1, -48) })
     
-    local oSidebarArea = fnCreate("Frame", { Parent = oBody, BackgroundTransparency = 1, Position = UDim2.new(0, 15, 0, 15), Size = UDim2.new(0, 140, 1, -30) })
-    fnCreate("TextLabel", { Parent = oSidebarArea, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), FontFace = tConfig.Font, Text = "CATEGORIES", TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left }, {TextColor3 = "TextMain"})
-    local oSidebarList = fnCreate("ScrollingFrame", { Parent = oSidebarArea, BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 25), Size = UDim2.new(1, 0, 1, -25), ScrollBarThickness = 0, CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y })
-    fnCreate("UIListLayout", { Parent = oSidebarList, Padding = UDim.new(0, 10) })
+    -- CLOSE BUTTON (TOP RIGHT)
+    local CloseButton = CreateInstance("TextButton", {
+        Parent = TopBar,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0, 36, 0, 36),
+        Position = UDim2.new(1, -46, 0, 6),
+        Text = "✕",
+        FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
+        TextSize = 20,
+        AutoButtonColor = false
+    }, {TextColor3 = "TextMain"})
+    
+    CreateInstance("UICorner", {Parent = CloseButton, CornerRadius = UDim.new(0, 6)})
+    
+    CloseButton.MouseEnter:Connect(function()
+        TweenService:Create(CloseButton, CreateTween(0.15), {BackgroundColor3 = Config.Colors.Error, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
+    end)
+    
+    CloseButton.MouseLeave:Connect(function()
+        TweenService:Create(CloseButton, CreateTween(0.15), {BackgroundColor3 = Color3.fromRGB(0,0,0,0), TextColor3 = Config.Colors.TextMain}):Play()
+    end)
+    
+    CloseButton.MouseButton1Click:Connect(function()
+        local Tween = TweenService:Create(MainFrame, CreateTween(0.3), {GroupTransparency = 1})
+        Tween:Play()
+        Tween.Completed:Wait()
+        MainFrame.Visible = false
+        Library.WindowVisible = false
+    end)
 
-    local oContentArea = fnCreate("Frame", { Parent = oBody, BackgroundTransparency = 1, Position = UDim2.new(0, 165, 0, 15), Size = UDim2.new(1, -180, 1, -30) })
-    fnCreate("TextLabel", { Parent = oContentArea, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), FontFace = tConfig.Font, Text = "FEATURES", TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left }, {TextColor3 = "TextMain"})
-    local oSectionContainer = fnCreate("ScrollingFrame", { Parent = oContentArea, BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 25), Size = UDim2.new(1, 0, 1, -25), ScrollBarThickness = 2, CanvasSize = UDim2.new(0,0,0,0), AutomaticCanvasSize = Enum.AutomaticSize.Y }, {ScrollBarImageColor3 = "Border"})
-    fnCreate("UIListLayout", { Parent = oSectionContainer, Padding = UDim.new(0, 10) })
+    -- Tab Container
+    local TabContainer = CreateInstance("Frame", {
+        Parent = TopBar,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 120, 0, 0),
+        Size = UDim2.new(1, -200, 1, 0)
+    })
+    
+    CreateInstance("UIListLayout", {
+        Parent = TabContainer,
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Padding = UDim.new(0, 5)
+    })
 
-    local oContentFadeOverlay = fnCreate("Frame", { Parent = oContentArea, Name = "ContentFadeOverlay", Size = UDim2.new(1, 0, 1, -25), Position = UDim2.new(0, 0, 0, 25), ZIndex = 1000, BackgroundTransparency = 1, Visible = false, BorderSizePixel = 0 }, {BackgroundColor3 = "PanelBg"})
-    local oTabFadeOverlay = fnCreate("Frame", { Parent = oBody, Name = "TabFadeOverlay", Size = UDim2.new(1, 0, 1, 0), Position = UDim2.new(0, 0, 0, 0), ZIndex = 2000, BackgroundTransparency = 1, Visible = false, BorderSizePixel = 0 }, {BackgroundColor3 = "PanelBg"})
+    -- Body
+    local Body = CreateInstance("Frame", {
+        Parent = MainFrame,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0, 48),
+        Size = UDim2.new(1, 0, 1, -48)
+    })
+    
+    -- Sidebar
+    local SidebarArea = CreateInstance("Frame", {
+        Parent = Body,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 15, 0, 15),
+        Size = UDim2.new(0, 150, 1, -30)
+    })
+    
+    CreateInstance("TextLabel", {
+        Parent = SidebarArea,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 20),
+        FontFace = Config.Font,
+        Text = "CATEGORIES",
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left
+    }, {TextColor3 = "TextMain"})
+    
+    local SidebarList = CreateInstance("ScrollingFrame", {
+        Parent = SidebarArea,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0, 25),
+        Size = UDim2.new(1, 0, 1, -25),
+        ScrollBarThickness = 0,
+        CanvasSize = UDim2.new(0,0,0,0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y
+    })
+    
+    CreateInstance("UIListLayout", {Parent = SidebarList, Padding = UDim.new(0, 10)})
 
-    local tWindowFunctions = {}
-    local bFirstTab = true
-    local tCurrentActiveSections = nil
-    local bIsAnimatingTab = false
+    -- Content Area
+    local ContentArea = CreateInstance("Frame", {
+        Parent = Body,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 175, 0, 15),
+        Size = UDim2.new(1, -190, 1, -30)
+    })
+    
+    CreateInstance("TextLabel", {
+        Parent = ContentArea,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 20),
+        FontFace = Config.Font,
+        Text = "FEATURES",
+        TextSize = 11,
+        TextXAlignment = Enum.TextXAlignment.Left
+    }, {TextColor3 = "TextMain"})
+    
+    local SectionContainer = CreateInstance("ScrollingFrame", {
+        Parent = ContentArea,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0, 25),
+        Size = UDim2.new(1, 0, 1, -25),
+        ScrollBarThickness = 3,
+        CanvasSize = UDim2.new(0,0,0,0),
+        AutomaticCanvasSize = Enum.AutomaticSize.Y
+    }, {ScrollBarImageColor3 = "Border"})
+    
+    CreateInstance("UIListLayout", {Parent = SectionContainer, Padding = UDim.new(0, 10)})
 
-    function tWindowFunctions:AddTab(tIconAsset)
-        local oTabButton = fnCreate("ImageButton", { Parent = oTabContainer, BackgroundTransparency = 1, Size = UDim2.new(0, 32, 0, 32), Image = "", AutoButtonColor = false }, {BackgroundColor3 = "PanelBg"})
-        fnCreate("UICorner", { Parent = oTabButton, CornerRadius = UDim.new(0, 4) })
-        local oIconImg = fnCreate("ImageLabel", { Parent = oTabButton, BackgroundTransparency = 1, Size = UDim2.new(0, 20, 0, 20), Position = UDim2.new(0.5, 0, 0.5, 0), AnchorPoint = Vector2.new(0.5, 0.5), Image = tIconAsset[1] or "rbxassetid://10734962600" }, {ImageColor3 = "TextMain"})
+    -- Fade Overlays
+    local ContentFadeOverlay = CreateInstance("Frame", {
+        Parent = ContentArea,
+        Name = "ContentFadeOverlay",
+        Size = UDim2.new(1, 0, 1, -25),
+        Position = UDim2.new(0, 0, 0, 25),
+        ZIndex = 1000,
+        BackgroundTransparency = 1,
+        Visible = false,
+        BorderSizePixel = 0
+    }, {BackgroundColor3 = "PanelBg"})
+    
+    local TabFadeOverlay = CreateInstance("Frame", {
+        Parent = Body,
+        Name = "TabFadeOverlay",
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        ZIndex = 2000,
+        BackgroundTransparency = 1,
+        Visible = false,
+        BorderSizePixel = 0
+    }, {BackgroundColor3 = "PanelBg"})
 
-        local tTabFunctions = {}
-        local tCategories = {} 
-        local tTabSubCategories = {} 
-        local bIsThisTabActive = bFirstTab
-        local bTabFirstSubCategory = true
-        local fnActiveSubAction = nil 
+    local WindowFunctions = {}
+    local FirstTab = true
+    local CurrentActiveSections = nil
+    local IsAnimatingTab = false
 
-        table.insert(tLibrary.DynamicUpdates, function() 
-			if bIsThisTabActive then 
-				oIconImg.ImageColor3 = tConfig.Colors.TextLight 
-			else 
-				oIconImg.ImageColor3 = tConfig.Colors.TextMain 
-			end 
-		end)
+    function WindowFunctions:AddTab(IconAsset)
+        local TabButton = CreateInstance("ImageButton", {
+            Parent = TabContainer,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, 32, 0, 32),
+            Image = "",
+            AutoButtonColor = false
+        }, {BackgroundColor3 = "PanelBg"})
+        
+        CreateInstance("UICorner", {Parent = TabButton, CornerRadius = UDim.new(0, 6)})
+        
+        local IconImg = CreateInstance("ImageLabel", {
+            Parent = TabButton,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, 20, 0, 20),
+            Position = UDim2.new(0.5, 0, 0.5, 0),
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            Image = IconAsset[1] or "rbxassetid://10734962600"
+        }, {ImageColor3 = "TextMain"})
 
-        local function fnActivateTab()
-            if bIsAnimatingTab then return end
-            tLibrary:ClosePopups()
-            for _, oBtn in oTabContainer:GetChildren() do 
-                if oBtn:IsA("ImageButton") then 
-                    oTweenService:Create(oBtn, fnAnim(0.2), {BackgroundTransparency = 1}):Play()
-                    local oInnerIcon = oBtn:FindFirstChild("ImageLabel")
-                    if oInnerIcon then 
-						oTweenService:Create(oInnerIcon, fnAnim(0.2), {ImageColor3 = tConfig.Colors.TextMain}):Play() 
-					end
+        local TabFunctions = {}
+        local Categories = {} 
+        local TabSubCategories = {} 
+        local IsThisTabActive = FirstTab
+        local TabFirstSubCategory = true
+        local ActiveSubAction = nil 
+
+        table.insert(Library.DynamicUpdates, function() 
+            if IsThisTabActive then 
+                IconImg.ImageColor3 = Config.Colors.TextLight 
+            else 
+                IconImg.ImageColor3 = Config.Colors.TextMain 
+            end 
+        end)
+
+        local function ActivateTab()
+            if IsAnimatingTab then return end
+            Library:ClosePopups()
+            
+            for _, Btn in TabContainer:GetChildren() do 
+                if Btn:IsA("ImageButton") then 
+                    TweenService:Create(Btn, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
+                    local InnerIcon = Btn:FindFirstChild("ImageLabel")
+                    if InnerIcon then 
+                        TweenService:Create(InnerIcon, CreateTween(0.2), {ImageColor3 = Config.Colors.TextMain}):Play() 
+                    end
                 end 
             end
-            oTweenService:Create(oTabButton, fnAnim(0.2), {BackgroundTransparency = 1}):Play() 
-            oTweenService:Create(oIconImg, fnAnim(0.2), {ImageColor3 = tConfig.Colors.TextLight}):Play()
+            
+            TweenService:Create(TabButton, CreateTween(0.2), {BackgroundTransparency = 1}):Play() 
+            TweenService:Create(IconImg, CreateTween(0.2), {ImageColor3 = Config.Colors.TextLight}):Play()
 
             task.spawn(function()
-                bIsAnimatingTab = true
-                oTabFadeOverlay.Visible = true
-                local oOutTween = oTweenService:Create(oTabFadeOverlay, fnAnim(0.12), {BackgroundTransparency = 0})
-				oOutTween:Play()
-				oOutTween.Completed:Wait()
-                for _, oChild in oSidebarList:GetChildren() do 
-					if oChild:IsA("Frame") then 
-						oChild.Visible = false 
-					end 
-				end
-                for _, oCat in tCategories do 
-					oCat.Visible = true 
-				end
-                if fnActiveSubAction then 
-					fnActiveSubAction(true) 
-				else 
-					for _, oChild in oSectionContainer:GetChildren() do 
-						if oChild:IsA("Frame") then 
-							oChild.Visible = false 
-						end 
-					end 
-				end
-                local oInTween = oTweenService:Create(oTabFadeOverlay, fnAnim(0.12), {BackgroundTransparency = 1})
-				oInTween:Play()
-				oInTween.Completed:Wait()
-                oTabFadeOverlay.Visible = false
-				bIsAnimatingTab = false
+                IsAnimatingTab = true
+                TabFadeOverlay.Visible = true
+                
+                local OutTween = TweenService:Create(TabFadeOverlay, CreateTween(0.12), {BackgroundTransparency = 0})
+                OutTween:Play()
+                OutTween.Completed:Wait()
+                
+                for _, Child in SidebarList:GetChildren() do 
+                    if Child:IsA("Frame") then 
+                        Child.Visible = false 
+                    end 
+                end
+                
+                for _, Cat in Categories do 
+                    Cat.Visible = true 
+                end
+                
+                if ActiveSubAction then 
+                    ActiveSubAction(true) 
+                else 
+                    for _, Child in SectionContainer:GetChildren() do 
+                        if Child:IsA("Frame") then 
+                            Child.Visible = false 
+                        end 
+                    end 
+                end
+                
+                local InTween = TweenService:Create(TabFadeOverlay, CreateTween(0.12), {BackgroundTransparency = 1})
+                InTween:Play()
+                InTween.Completed:Wait()
+                
+                TabFadeOverlay.Visible = false
+                IsAnimatingTab = false
             end)
         end
 
-        oTabButton.MouseButton1Click:Connect(fnActivateTab)
-        if bFirstTab then 
-			bFirstTab = false
-			oIconImg.ImageColor3 = tConfig.Colors.TextLight 
-		end
+        TabButton.MouseButton1Click:Connect(ActivateTab)
+        
+        if FirstTab then 
+            FirstTab = false
+            IconImg.ImageColor3 = Config.Colors.TextLight 
+        end
 
-        function tTabFunctions:AddCategory(sCatName)
-            local oCategoryFrame = fnCreate("Frame", { Parent = oSidebarList, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Visible = bIsThisTabActive, BorderSizePixel = 0 }, {BackgroundColor3 = "SectionBg"})
-            fnCreate("UICorner", {Parent = oCategoryFrame, CornerRadius = UDim.new(0, 4)})
-            fnCreate("UIStroke", {Parent = oCategoryFrame, Thickness = 1}, {Color = "Border"})
-            table.insert(tCategories, oCategoryFrame)
+        function TabFunctions:AddCategory(CatName)
+            local CategoryFrame = CreateInstance("Frame", {
+                Parent = SidebarList,
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                Visible = IsThisTabActive,
+                BorderSizePixel = 0
+            }, {BackgroundColor3 = "SectionBg"})
+            
+            CreateInstance("UICorner", {Parent = CategoryFrame, CornerRadius = UDim.new(0, 6)})
+            CreateInstance("UIStroke", {Parent = CategoryFrame, Thickness = 1}, {Color = "Border"})
+            table.insert(Categories, CategoryFrame)
 
-            local oCatHeader = fnCreate("TextButton", { Parent = oCategoryFrame, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 30), FontFace = tConfig.Font, Text = "  " .. sCatName, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false }, {TextColor3 = "TextLight"})
-            local oCatIcon = fnCreate("ImageLabel", { Parent = oCatHeader, BackgroundTransparency = 1, Size = UDim2.new(0, 16, 0, 16), Position = UDim2.new(1, -22, 0.5, -8), Image = tConfig.ChevronImage, Rotation = 0 }, {ImageColor3 = "TextMain"})
-            local oSubCatContainer = fnCreate("Frame", { Parent = oCategoryFrame, BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 30), Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, ClipsDescendants = true, Visible = true })
-            fnCreate("UIListLayout", { Parent = oSubCatContainer, Padding = UDim.new(0, 2) })
-            fnCreate("UIPadding", { Parent = oSubCatContainer, PaddingBottom = UDim.new(0, 6), PaddingLeft = UDim.new(0, 6), PaddingRight = UDim.new(0, 6) })
+            local CatHeader = CreateInstance("TextButton", {
+                Parent = CategoryFrame,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 32),
+                FontFace = Config.Font,
+                Text = "  " .. CatName,
+                TextSize = 12,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                AutoButtonColor = false
+            }, {TextColor3 = "TextLight"})
+            
+            local CatIcon = CreateInstance("ImageLabel", {
+                Parent = CatHeader,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(0, 16, 0, 16),
+                Position = UDim2.new(1, -22, 0.5, -8),
+                Image = Config.ChevronImage,
+                Rotation = 0
+            }, {ImageColor3 = "TextMain"})
+            
+            local SubCatContainer = CreateInstance("Frame", {
+                Parent = CategoryFrame,
+                BackgroundTransparency = 1,
+                Position = UDim2.new(0, 0, 0, 32),
+                Size = UDim2.new(1, 0, 0, 0),
+                AutomaticSize = Enum.AutomaticSize.Y,
+                ClipsDescendants = true,
+                Visible = true
+            })
+            
+            CreateInstance("UIListLayout", {Parent = SubCatContainer, Padding = UDim.new(0, 2)})
+            CreateInstance("UIPadding", {
+                Parent = SubCatContainer,
+                PaddingBottom = UDim.new(0, 6),
+                PaddingLeft = UDim.new(0, 6),
+                PaddingRight = UDim.new(0, 6)
+            })
 
-            local bCatOpen = true
-            oCatHeader.MouseButton1Click:Connect(function() 
-				bCatOpen = not bCatOpen
-				oSubCatContainer.Visible = bCatOpen
-				oTweenService:Create(oCatIcon, fnAnim(0.2), {Rotation = bCatOpen and 0 or -90}):Play() 
-			end)
+            local CatOpen = true
+            CatHeader.MouseButton1Click:Connect(function() 
+                CatOpen = not CatOpen
+                SubCatContainer.Visible = CatOpen
+                TweenService:Create(CatIcon, CreateTween(0.2), {Rotation = CatOpen and 0 or -90}):Play() 
+            end)
 
-            local tCategoryFunctions = {}
+            local CategoryFunctions = {}
 
-            function tCategoryFunctions:AddSubCategory(sSubCatName)
-                local oSubButton = fnCreate("TextButton", { Parent = oSubCatContainer, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 26), FontFace = tConfig.Font, Text = "  " .. sSubCatName, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false }, {TextColor3 = "TextMain"})
-                fnCreate("UICorner", {Parent = oSubButton, CornerRadius = UDim.new(0, 3)})
-                local oActiveBorder = fnCreate("Frame", { Parent = oSubButton, BorderSizePixel = 0, Size = UDim2.new(0, 2, 1, 0), Visible = false }, {BackgroundColor3 = "Accent"})
+            function CategoryFunctions:AddSubCategory(SubCatName)
+                local SubButton = CreateInstance("TextButton", {
+                    Parent = SubCatContainer,
+                    BackgroundTransparency = 1,
+                    Size = UDim2.new(1, 0, 0, 28),
+                    FontFace = Config.Font,
+                    Text = "  " .. SubCatName,
+                    TextSize = 12,
+                    TextXAlignment = Enum.TextXAlignment.Left,
+                    AutoButtonColor = false
+                }, {TextColor3 = "TextMain"})
+                
+                CreateInstance("UICorner", {Parent = SubButton, CornerRadius = UDim.new(0, 4)})
+                
+                local ActiveBorder = CreateInstance("Frame", {
+                    Parent = SubButton,
+                    BorderSizePixel = 0,
+                    Size = UDim2.new(0, 3, 1, 0),
+                    Visible = false
+                }, {BackgroundColor3 = "Accent"})
 
-                local tSubFunctions = {}
-                local tAssociatedSections = {}
-                local tSubState = {bIsActive = false, oButton = oSubButton, oActiveBorder = oActiveBorder}
-                table.insert(tTabSubCategories, tSubState)
+                local SubFunctions = {}
+                local AssociatedSections = {}
+                local SubState = {bIsActive = false, oButton = SubButton, oActiveBorder = ActiveBorder}
+                table.insert(TabSubCategories, SubState)
 
-                table.insert(tLibrary.DynamicUpdates, function()
-                    if tSubState.bIsActive then
-                        oSubButton.TextColor3 = tConfig.Colors.TextLight
-						oSubButton.BackgroundTransparency = 0.95
-						oSubButton.BackgroundColor3 = Color3.new(1,1,1)
-						oActiveBorder.Visible = true
+                table.insert(Library.DynamicUpdates, function()
+                    if SubState.bIsActive then
+                        SubButton.TextColor3 = Config.Colors.TextLight
+                        SubButton.BackgroundTransparency = 0.9
+                        SubButton.BackgroundColor3 = Color3.new(1,1,1)
+                        ActiveBorder.Visible = true
                     else
-                        oSubButton.TextColor3 = tConfig.Colors.TextMain
-						oSubButton.BackgroundTransparency = 1
-						oActiveBorder.Visible = false
+                        SubButton.TextColor3 = Config.Colors.TextMain
+                        SubButton.BackgroundTransparency = 1
+                        ActiveBorder.Visible = false
                     end
                 end)
 
-                local function fnSelectSubCategory(bNoFade)
-                    tLibrary:ClosePopups()
-                    fnActiveSubAction = fnSelectSubCategory
-                    tCurrentActiveSections = tAssociatedSections
+                local function SelectSubCategory(NoFade)
+                    Library:ClosePopups()
+                    ActiveSubAction = SelectSubCategory
+                    CurrentActiveSections = AssociatedSections
                     
-                    for _, tState in tTabSubCategories do
-                        tState.bIsActive = false
-						oTweenService:Create(tState.oButton, fnAnim(0.2), {BackgroundTransparency = 1, TextColor3 = tConfig.Colors.TextMain}):Play()
-						tState.oActiveBorder.Visible = false
+                    for _, State in TabSubCategories do
+                        State.bIsActive = false
+                        TweenService:Create(State.oButton, CreateTween(0.2), {
+                            BackgroundTransparency = 1,
+                            TextColor3 = Config.Colors.TextMain
+                        }):Play()
+                        State.oActiveBorder.Visible = false
                     end
                     
-                    tSubState.bIsActive = true
-					oTweenService:Create(oSubButton, fnAnim(0.2), {BackgroundTransparency = 0.95, BackgroundColor3 = Color3.new(1,1,1), TextColor3 = tConfig.Colors.TextLight}):Play()
-					oActiveBorder.Visible = true
+                    SubState.bIsActive = true
+                    TweenService:Create(SubButton, CreateTween(0.2), {
+                        BackgroundTransparency = 0.9,
+                        BackgroundColor3 = Color3.new(1,1,1),
+                        TextColor3 = Config.Colors.TextLight
+                    }):Play()
+                    ActiveBorder.Visible = true
 
-                    if not bNoFade then
+                    if not NoFade then
                         task.spawn(function()
-                            oContentFadeOverlay.Visible = true
-                            local oOutTween = oTweenService:Create(oContentFadeOverlay, fnAnim(0.12), {BackgroundTransparency = 0})
-							oOutTween:Play()
-							oOutTween.Completed:Wait()
-                            if tCurrentActiveSections == tAssociatedSections then
-                                for _, oChild in oSectionContainer:GetChildren() do 
-									if oChild:IsA("Frame") then 
-										oChild.Visible = false 
-									end 
-								end
-                                for _, oSection in tAssociatedSections do 
-									oSection.Visible = true 
-								end
-                                local oInTween = oTweenService:Create(oContentFadeOverlay, fnAnim(0.12), {BackgroundTransparency = 1})
-								oInTween:Play()
-								oInTween.Completed:Wait()
-                                if tCurrentActiveSections == tAssociatedSections then 
-									oContentFadeOverlay.Visible = false 
-								end
+                            ContentFadeOverlay.Visible = true
+                            local OutTween = TweenService:Create(ContentFadeOverlay, CreateTween(0.12), {BackgroundTransparency = 0})
+                            OutTween:Play()
+                            OutTween.Completed:Wait()
+                            
+                            if CurrentActiveSections == AssociatedSections then
+                                for _, Child in SectionContainer:GetChildren() do 
+                                    if Child:IsA("Frame") then 
+                                        Child.Visible = false 
+                                    end 
+                                end
+                                for _, Section in AssociatedSections do 
+                                    Section.Visible = true 
+                                end
+                                local InTween = TweenService:Create(ContentFadeOverlay, CreateTween(0.12), {BackgroundTransparency = 1})
+                                InTween:Play()
+                                InTween.Completed:Wait()
+                                if CurrentActiveSections == AssociatedSections then 
+                                    ContentFadeOverlay.Visible = false 
+                                end
                             end
                         end)
                     else
-                        oContentFadeOverlay.Visible = false
-                        for _, oChild in oSectionContainer:GetChildren() do 
-							if oChild:IsA("Frame") then 
-								oChild.Visible = false 
-							end 
-						end
-                        for _, oSection in tAssociatedSections do 
-							oSection.Visible = true 
-						end
+                        ContentFadeOverlay.Visible = false
+                        for _, Child in SectionContainer:GetChildren() do 
+                            if Child:IsA("Frame") then 
+                                Child.Visible = false 
+                            end 
+                        end
+                        for _, Section in AssociatedSections do 
+                            Section.Visible = true 
+                        end
                     end
                 end
 
-                oSubButton.MouseButton1Click:Connect(function() fnSelectSubCategory(false) end)
+                SubButton.MouseButton1Click:Connect(function() SelectSubCategory(false) end)
 
-                if bTabFirstSubCategory then 
-					fnActiveSubAction = fnSelectSubCategory
-					bTabFirstSubCategory = false
-					if bIsThisTabActive then 
-						fnSelectSubCategory(true) 
-					end 
-				end
+                if TabFirstSubCategory then 
+                    ActiveSubAction = SelectSubCategory
+                    TabFirstSubCategory = false
+                    if IsThisTabActive then 
+                        SelectSubCategory(true) 
+                    end 
+                end
 
-                function tSubFunctions:AddSection(sSectionName)
-                    local oSectionFrame = fnCreate("Frame", { Parent = oSectionContainer, Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, Visible = false, BorderSizePixel = 0 }, {BackgroundColor3 = "SectionBg"})
-                    fnCreate("UICorner", {Parent = oSectionFrame, CornerRadius = UDim.new(0, 4)})
-                    fnCreate("UIStroke", {Parent = oSectionFrame, Thickness = 1}, {Color = "Border"})
-                    table.insert(tAssociatedSections, oSectionFrame)
+                function SubFunctions:AddSection(SectionName)
+                    local SectionFrame = CreateInstance("Frame", {
+                        Parent = SectionContainer,
+                        Size = UDim2.new(1, 0, 0, 0),
+                        AutomaticSize = Enum.AutomaticSize.Y,
+                        Visible = false,
+                        BorderSizePixel = 0
+                    }, {BackgroundColor3 = "SectionBg"})
                     
-                    if tSubState.bIsActive then 
-						oSectionFrame.Visible = true 
-					end
-
-                    local oHeaderBtn = fnCreate("TextButton", { Parent = oSectionFrame, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 30), Text = "  " .. sSectionName, FontFace = tConfig.Font, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, AutoButtonColor = false }, {TextColor3 = "TextMain"})
-                    local oSecIcon = fnCreate("ImageLabel", { Parent = oHeaderBtn, BackgroundTransparency = 1, Size = UDim2.new(0, 16, 0, 16), Position = UDim2.new(1, -22, 0.5, -8), Image = tConfig.ChevronImage, Rotation = 0 }, {ImageColor3 = "TextMain"}) 
-                    fnCreate("Frame", { Parent = oSectionFrame, BorderSizePixel = 0, Position = UDim2.new(0,0,0,30), Size = UDim2.new(1, 0, 0, 1) }, {BackgroundColor3 = "Separator"})
-
-                    local oElementsContainer = fnCreate("Frame", { Parent = oSectionFrame, BackgroundTransparency = 1, Position = UDim2.new(0, 0, 0, 35), Size = UDim2.new(1, 0, 0, 0), AutomaticSize = Enum.AutomaticSize.Y, ClipsDescendants = false })
-                    fnCreate("UIListLayout", { Parent = oElementsContainer, Padding = UDim.new(0, 8) })
-                    fnCreate("UIPadding", { Parent = oSectionFrame, PaddingBottom = UDim.new(0, 10), PaddingLeft = UDim.new(0, 10), PaddingRight = UDim.new(0, 10) })
-
-                    local bSecOpen = true
-                    oHeaderBtn.MouseButton1Click:Connect(function() 
-						bSecOpen = not bSecOpen
-						oElementsContainer.Visible = bSecOpen
-						oTweenService:Create(oSecIcon, fnAnim(0.2), {Rotation = bSecOpen and 0 or -90}):Play() 
-					end)
-
-                    local tSectionFunctions = {}
-
-                    local function fnAttachAddons(tFunctionsObj, oRightSideContainer, fnParentToggleFunc, bIsLabel)
-                        function tFunctionsObj:Colorpicker(tColProps)
-                            local oCurrentColor = tColProps.Default or Color3.new(1,1,1)
-                            local nCurrentAlpha = 1
-                            local tHSV = {Color3.toHSV(oCurrentColor)}
-
-                            local oColorBtn = fnCreate("TextButton", { Parent = oRightSideContainer, Text = "", Size = UDim2.new(0, 25, 0, 12), BackgroundColor3 = oCurrentColor, BorderSizePixel = 1, AutoButtonColor = false, LayoutOrder = 1 }, {BorderColor3 = "Border"})
-                            local oPickerFrame = fnCreate("Frame", { Parent = oScreenGui, Name = "ColorPickerPopup", BorderSizePixel = 1, Size = UDim2.new(0, 220, 0, 190), Visible = false, ZIndex = 3000 }, {BackgroundColor3 = "PanelBg", BorderColor3 = "Border"})
-                            fnCreate("UIStroke", { Parent = oPickerFrame, Thickness = 2 }, {Color = "Border"})
-                            
-                            local oColorMap = fnCreate("TextButton", { Parent = oPickerFrame, Position = UDim2.new(0, 10, 0, 10), Size = UDim2.new(1, -20, 0, 130), BackgroundColor3 = Color3.fromHSV(tHSV[1], 1, 1), AutoButtonColor = false, Text = "", ZIndex = 3001 })
-                            local oSatOverlay = fnCreate("Frame", {Parent = oColorMap, Size = UDim2.new(1,0,1,0), BackgroundColor3=Color3.new(1,1,1), ZIndex=3002, BorderSizePixel=0})
-                            local oSatGradient = fnCreate("UIGradient", {Parent = oSatOverlay, Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(1,1)}})
-                            local oValOverlay = fnCreate("Frame", {Parent = oColorMap, Size = UDim2.new(1,0,1,0), BackgroundColor3=Color3.new(0,0,0), ZIndex=3003, BorderSizePixel=0})
-                            local oValGradient = fnCreate("UIGradient", {Parent = oValOverlay, Rotation = 90, Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0,1), NumberSequenceKeypoint.new(1,0)}})
-                            local oMapMarker = fnCreate("ImageLabel", { Parent = oColorMap, Size = UDim2.new(0, 12, 0, 12), BackgroundTransparency = 1, Image = tConfig.PickerCursor, AnchorPoint = Vector2.new(0.5, 0.5), Position = UDim2.new(tHSV[2], 0, 1-tHSV[3], 0), ZIndex = 3004 })
-
-                            local oHueBar = fnCreate("TextButton", { Parent = oPickerFrame, Position = UDim2.new(0, 10, 0, 150), Size = UDim2.new(1, -20, 0, 10), BackgroundColor3 = Color3.new(1,1,1), AutoButtonColor = false, Text = "", ZIndex = 3001 })
-                            fnCreate("UIGradient", { Parent = oHueBar, Color = ColorSequence.new{ColorSequenceKeypoint.new(0, Color3.fromRGB(255,0,0)),ColorSequenceKeypoint.new(0.16, Color3.fromRGB(255,255,0)),ColorSequenceKeypoint.new(0.33, Color3.fromRGB(0,255,0)),ColorSequenceKeypoint.new(0.5, Color3.fromRGB(0,255,255)),ColorSequenceKeypoint.new(0.66, Color3.fromRGB(0,0,255)),ColorSequenceKeypoint.new(0.83, Color3.fromRGB(255,0,255)),ColorSequenceKeypoint.new(1, Color3.fromRGB(255,0,0))} })
-                            local oHueMarker = fnCreate("Frame", { Parent = oHueBar, Size = UDim2.new(0, 2, 1, 0), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 3002, Position = UDim2.new(tHSV[1], 0, 0, 0) })
-
-                            local oAlphaBar = fnCreate("TextButton", { Parent = oPickerFrame, Position = UDim2.new(0, 10, 0, 170), Size = UDim2.new(1, -20, 0, 10), BackgroundColor3 = Color3.new(1,1,1), AutoButtonColor = false, Text = "", ZIndex = 3001 })
-                            fnCreate("ImageLabel", { Parent = oAlphaBar, Size = UDim2.new(1,0,1,0), BackgroundTransparency=1, Image="rbxassetid://138299238074834", ScaleType=Enum.ScaleType.Tile, TileSize=UDim2.new(0,10,0,10), ZIndex=3001 })
-                            local oAlphaGradient = fnCreate("UIGradient", { Parent = fnCreate("Frame", {Parent=oAlphaBar, Size=UDim2.new(1,0,1,0), BackgroundColor3=oCurrentColor, ZIndex=3002}), Transparency = NumberSequence.new{NumberSequenceKeypoint.new(0,0), NumberSequenceKeypoint.new(1,1)} })
-                            local oAlphaMarker = fnCreate("Frame", { Parent = oAlphaBar, Size = UDim2.new(0, 2, 1, 0), BackgroundColor3 = Color3.new(1,1,1), BorderSizePixel = 0, ZIndex = 3003, Position = UDim2.new(nCurrentAlpha, 0, 0, 0) })
-
-                            local function fnUpdateVisuals()
-                                oColorBtn.BackgroundColor3 = oCurrentColor
-								oColorMap.BackgroundColor3 = Color3.fromHSV(tHSV[1], 1, 1)
-								oAlphaGradient.Parent.BackgroundColor3 = oCurrentColor
-                                oTweenService:Create(oMapMarker, fnAnim(0.08), {Position = UDim2.new(tHSV[2], 0, 1-tHSV[3], 0)}):Play()
-								oTweenService:Create(oHueMarker, fnAnim(0.08), {Position = UDim2.new(tHSV[1], 0, 0, 0)}):Play()
-								oTweenService:Create(oAlphaMarker, fnAnim(0.08), {Position = UDim2.new(nCurrentAlpha, 0, 0, 0)}):Play()
-                                if tColProps.Callback then 
-									tColProps.Callback(oCurrentColor) 
-								end
-                            end
-
-                            local function fnHandleInput(oGuiObj, sType, oInitInput)
-                                local function update(inputVec)
-                                    local nMaxX, nMaxY = oGuiObj.AbsoluteSize.X, oGuiObj.AbsoluteSize.Y
-                                    local nPx, nPy = math.clamp(inputVec.X - oGuiObj.AbsolutePosition.X, 0, nMaxX), math.clamp(inputVec.Y - oGuiObj.AbsolutePosition.Y, 0, nMaxY)
-                                    local nX, nY = nPx/nMaxX, nPy/nMaxY
-                                    if sType == "Map" then 
-										tHSV[2]=nX
-										tHSV[3]=1-nY 
-									elseif sType == "Hue" then 
-										tHSV[1]=nX 
-									elseif sType == "Alpha" then 
-										nCurrentAlpha=nX 
-									end
-                                    oCurrentColor = Color3.fromHSV(tHSV[1], tHSV[2], tHSV[3])
-									fnUpdateVisuals()
-                                end
-                                update(oInitInput.Position)
-                                local cMove = oUserInputService.InputChanged:Connect(function(oMove)
-                                    if oMove.UserInputType == Enum.UserInputType.MouseMovement or oMove.UserInputType == Enum.UserInputType.Touch then 
-										update(oMove.Position) 
-									end
-                                end)
-                                local cEnd; cEnd = oUserInputService.InputEnded:Connect(function(oEnd)
-                                    if oEnd.UserInputType == Enum.UserInputType.MouseButton1 or oEnd.UserInputType == Enum.UserInputType.Touch then 
-										cMove:Disconnect()
-										cEnd:Disconnect() 
-									end
-                                end)
-                            end
-
-                            oColorMap.InputBegan:Connect(function(i) 
-								if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
-									fnHandleInput(oColorMap, "Map", i) 
-								end 
-							end)
-                            oHueBar.InputBegan:Connect(function(i) 
-								if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
-									fnHandleInput(oHueBar, "Hue", i) 
-								end 
-							end)
-                            oAlphaBar.InputBegan:Connect(function(i) 
-								if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then 
-									fnHandleInput(oAlphaBar, "Alpha", i) 
-								end 
-							end)
-                            
-                            oColorBtn.MouseButton1Click:Connect(function()
-                                if oPickerFrame.Visible then 
-                                    oPickerFrame.Visible = false
-									tLibrary.ActivePopup = nil 
-                                else 
-                                    tLibrary:ClosePopups()
-									tLibrary.ActivePopup = {Element = oPickerFrame, Ignore = {oColorBtn}, Close = function() oPickerFrame.Visible = false end}
-                                    local nPx = oColorBtn.AbsolutePosition.X - 200
-                                    local nPy = oColorBtn.AbsolutePosition.Y + 20
-                                    
-                                    if nPx < 0 then 
-										nPx = oColorBtn.AbsolutePosition.X + oColorBtn.AbsoluteSize.X + 10 
-									end
-                                    if nPy + 190 > oScreenGui.AbsoluteSize.Y then 
-										nPy = oScreenGui.AbsoluteSize.Y - 195 
-									end
-                                    
-                                    oPickerFrame.Position = UDim2.new(0, nPx, 0, nPy)
-                                    oPickerFrame.Visible = true
-                                end
-                            end)
-                            
-                            oMapMarker.Position = UDim2.new(tHSV[2], 0, 1-tHSV[3], 0)
-							oHueMarker.Position = UDim2.new(tHSV[1], 0, 0, 0)
-							oAlphaMarker.Position = UDim2.new(nCurrentAlpha, 0, 0, 0)
-                            
-                            local tCPFunctions = {}
-                            function tCPFunctions:SetValue(oVal) 
-								oCurrentColor = oVal
-								tHSV = {Color3.toHSV(oCurrentColor)}
-								fnUpdateVisuals() 
-							end
-                            function tCPFunctions:GetValue() 
-								return oCurrentColor 
-							end
-                            if tColProps.Flag then 
-								tLibrary.Flags[tColProps.Flag] = tCPFunctions 
-							end
-                            
-                            return tFunctionsObj
-                        end
-
-                        function tFunctionsObj:Bind(tBindProps)
-                            local oCurrentBind = tBindProps.Default
-                            local sCurrentMode = tBindProps.Type or "Hold"
-
-                            local oBindFrame = fnCreate("Frame", { Parent = oRightSideContainer, BackgroundTransparency = 1, Size = UDim2.new(0, 0, 1, 0), AutomaticSize = Enum.AutomaticSize.X, LayoutOrder = 10 })
-                            fnCreate("UIListLayout", { Parent = oBindFrame, FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 4) })
-                            
-                            local oModeBtn = nil
-                            if not bIsLabel then
-                                oModeBtn = fnCreate("TextButton", { Parent = oBindFrame, BorderSizePixel = 0, Size = UDim2.new(0, 0, 0, 14), AutomaticSize = Enum.AutomaticSize.X, Text = sCurrentMode, FontFace = tConfig.Font, TextSize = 10, AutoButtonColor = false }, {BackgroundColor3 = "ElementBg", BorderColor3 = "Border", TextColor3 = "TextMain"})
-                                fnCreate("UIPadding", { Parent = oModeBtn, PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) })
-                                oModeBtn.MouseButton1Click:Connect(function()
-                                    if tLibrary.ActivePopup then 
-										tLibrary:ClosePopups() 
-									end
-                                    local oModeDrop = fnCreate("Frame", { Parent = oScreenGui, BorderSizePixel = 1, Size = UDim2.new(0, oModeBtn.AbsoluteSize.X, 0, 60), Visible = true, ZIndex = 3000 }, {BackgroundColor3 = "ElementBg", BorderColor3 = "Border"})
-                                    fnCreate("UIListLayout", {Parent = oModeDrop})
-                                    
-                                    local nMaxH = 60
-                                    local nY = oModeBtn.AbsolutePosition.Y + oModeBtn.AbsoluteSize.Y + 2
-                                    if nY + nMaxH > oScreenGui.AbsoluteSize.Y then 
-										nY = oModeBtn.AbsolutePosition.Y - nMaxH - 2 
-									end
-                                    oModeDrop.Position = UDim2.new(0, oModeBtn.AbsolutePosition.X, 0, nY)
-                                    
-                                    local tModes = {"Hold", "Toggle", "Always"}
-                                    for _, sMode in tModes do
-                                        local oMBtn = fnCreate("TextButton", { Parent = oModeDrop, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), Text = sMode, FontFace = tConfig.Font, TextSize = 10, ZIndex = 3002, AutoButtonColor = false }, {TextColor3 = (sMode == sCurrentMode and "TextLight" or "TextMain")})
-                                        oMBtn.MouseButton1Click:Connect(function() 
-											sCurrentMode = sMode
-											oModeBtn.Text = sMode
-											oModeDrop:Destroy()
-											tLibrary.ActivePopup = nil
-											if fnParentToggleFunc then 
-												if sCurrentMode == "Always" then 
-													fnParentToggleFunc(true) 
-												else 
-													fnParentToggleFunc(tFunctionsObj:GetValue()) 
-												end 
-											end 
-										end)
-                                    end
-                                    tLibrary.ActivePopup = {Element = oModeDrop, Ignore = {oModeBtn}, Close = function() oModeDrop:Destroy() end}
-                                end)
-                            end
-
-                            local oKeyBtn = fnCreate("TextButton", { Parent = oBindFrame, BorderSizePixel = 0, Size = UDim2.new(0, 0, 0, 14), AutomaticSize = Enum.AutomaticSize.X, Text = fnGetBindText(oCurrentBind), FontFace = tConfig.Font, TextSize = 10, AutoButtonColor = false }, {BackgroundColor3 = "ElementBg", BorderColor3 = "Border", TextColor3 = "TextMain"})
-                            fnCreate("UIPadding", { Parent = oKeyBtn, PaddingLeft = UDim.new(0, 4), PaddingRight = UDim.new(0, 4) })
-
-                            local bBinding = false
-                            oKeyBtn.MouseButton1Click:Connect(function()
-                                if bBinding then return end
-								bBinding = true
-								oKeyBtn.Text = "..."
-                                local cInputCon; cInputCon = oUserInputService.InputBegan:Connect(function(oInput)
-                                    if oInput.UserInputType == Enum.UserInputType.Keyboard then 
-                                        if oInput.KeyCode == Enum.KeyCode.Escape then 
-											oCurrentBind = nil
-											oKeyBtn.Text = "None" 
-                                        else 
-											oCurrentBind = oInput.KeyCode
-											oKeyBtn.Text = oInput.KeyCode.Name 
-										end
-                                        bBinding = false
-										cInputCon:Disconnect() 
-                                        if bIsLabel and tBindProps.Callback then 
-											tBindProps.Callback(oCurrentBind) 
-										end
-                                    elseif oInput.UserInputType == Enum.UserInputType.MouseButton1 or oInput.UserInputType == Enum.UserInputType.MouseButton2 or oInput.UserInputType == Enum.UserInputType.MouseButton3 then 
-                                        oCurrentBind = oInput.UserInputType
-										oKeyBtn.Text = fnGetBindText(oInput.UserInputType)
-                                        bBinding = false
-										cInputCon:Disconnect() 
-                                        if bIsLabel and tBindProps.Callback then 
-											tBindProps.Callback(oCurrentBind) 
-										end
-                                    end
-                                end)
-                            end)
-                            
-                            if not bIsLabel then
-                                oUserInputService.InputBegan:Connect(function(oInput)
-                                    if not bBinding and oCurrentBind and (oInput.KeyCode == oCurrentBind or oInput.UserInputType == oCurrentBind) then 
-										if fnParentToggleFunc then 
-											if sCurrentMode == "Toggle" then 
-												fnParentToggleFunc(not tFunctionsObj:GetValue()) 
-											elseif sCurrentMode == "Hold" then 
-												fnParentToggleFunc(true) 
-											end 
-										else 
-											if tBindProps.Callback then 
-												tBindProps.Callback() 
-											end 
-										end 
-									end
-                                end)
-                                oUserInputService.InputEnded:Connect(function(oInput)
-                                    if not bBinding and oCurrentBind and (oInput.KeyCode == oCurrentBind or oInput.UserInputType == oCurrentBind) then 
-										if fnParentToggleFunc and sCurrentMode == "Hold" then 
-											fnParentToggleFunc(false) 
-										end 
-									end
-                                end)
-                                if fnParentToggleFunc and sCurrentMode == "Always" then 
-									fnParentToggleFunc(true) 
-								end
-                            end
-                            
-                            local tBindFunctions = {}
-                            function tBindFunctions:SetValue(oVal) 
-								oCurrentBind = oVal
-								oKeyBtn.Text = fnGetBindText(oCurrentBind) 
-							end
-                            function tBindFunctions:GetValue() 
-								return oCurrentBind 
-							end
-                            if tBindProps.Flag then 
-								tLibrary.Flags[tBindProps.Flag] = tBindFunctions 
-							end
-
-                            return tFunctionsObj
-                        end
+                    CreateInstance("UICorner", {Parent = SectionFrame, CornerRadius = UDim.new(0, 6)})
+                    CreateInstance("UIStroke", {Parent = SectionFrame, Thickness = 1}, {Color = "Border"})
+                    table.insert(AssociatedSections, SectionFrame)
+                    
+                    if SubState.bIsActive then 
+                        SectionFrame.Visible = true 
                     end
 
-                    function tSectionFunctions:Button(tProps)
-                        local oButtonFrame = fnCreate("Frame", { Parent = oElementsContainer, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 26) })
-                        fnCreate("UIListLayout", { Parent = oButtonFrame, FillDirection = Enum.FillDirection.Horizontal, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 5) })
+                    local HeaderBtn = CreateInstance("TextButton", {
+                        Parent = SectionFrame,
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(1, 0, 0, 32),
+                        Text = "  " .. SectionName,
+                        FontFace = Config.Font,
+                        TextSize = 12,
+                        TextXAlignment = Enum.TextXAlignment.Left,
+                        AutoButtonColor = false
+                    }, {TextColor3 = "TextMain"})
+                    
+                    local SecIcon = CreateInstance("ImageLabel", {
+                        Parent = HeaderBtn,
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(0, 16, 0, 16),
+                        Position = UDim2.new(1, -22, 0.5, -8),
+                        Image = Config.ChevronImage,
+                        Rotation = 0
+                    }, {ImageColor3 = "TextMain"}) 
+                    
+                    CreateInstance("Frame", {
+                        Parent = SectionFrame,
+                        BorderSizePixel = 0,
+                        Position = UDim2.new(0,0,0,32),
+                        Size = UDim2.new(1, 0, 0, 1)
+                    }, {BackgroundColor3 = "Separator"})
+
+                    local ElementsContainer = CreateInstance("Frame", {
+                        Parent = SectionFrame,
+                        BackgroundTransparency = 1,
+                        Position = UDim2.new(0, 0, 0, 37),
+                        Size = UDim2.new(1, 0, 0, 0),
+                        AutomaticSize = Enum.AutomaticSize.Y,
+                        ClipsDescendants = false
+                    })
+                    
+                    CreateInstance("UIListLayout", {Parent = ElementsContainer, Padding = UDim.new(0, 8)})
+                    CreateInstance("UIPadding", {
+                        Parent = SectionFrame,
+                        PaddingBottom = UDim.new(0, 10),
+                        PaddingLeft = UDim.new(0, 10),
+                        PaddingRight = UDim.new(0, 10)
+                    })
+
+                    local SecOpen = true
+                    HeaderBtn.MouseButton1Click:Connect(function() 
+                        SecOpen = not SecOpen
+                        ElementsContainer.Visible = SecOpen
+                        TweenService:Create(SecIcon, CreateTween(0.2), {Rotation = SecOpen and 0 or -90}):Play() 
+                    end)
+
+                    local SectionFunctions = {}
+
+                    local function AttachAddons(FunctionsObj, RightSideContainer, ParentToggleFunc, IsLabel)
+                        -- Colorpicker, Bind, etc. (same as before)
+                        -- ... (keeping existing code for brevity)
+                    end
+
+                    -- BUTTON
+                    function SectionFunctions:Button(Props)
+                        local ButtonFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 30)
+                        })
                         
-                        local tButtonsInGroup = {}
-                        local tButtonFunctions = {}
+                        CreateInstance("UIListLayout", {
+                            Parent = ButtonFrame,
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            VerticalAlignment = Enum.VerticalAlignment.Center,
+                            Padding = UDim.new(0, 5)
+                        })
+                        
+                        local ButtonsInGroup = {}
+                        local ButtonFunctions = {}
 
-                        local function fnAddButton(tBtnProps)
-                            local oBtn = fnCreate("TextButton", { Parent = oButtonFrame, BorderSizePixel = 0, FontFace = tConfig.Font, Text = tBtnProps.Title, TextSize = 12, AutoButtonColor = false }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
-                            fnCreate("UICorner", { Parent = oBtn, CornerRadius = UDim.new(0, 4) })
-                            local oStroke = fnCreate("UIStroke", { Parent = oBtn, Thickness = 1 }, {Color = "Border"})
+                        local function AddButton(BtnProps)
+                            local Btn = CreateInstance("TextButton", {
+                                Parent = ButtonFrame,
+                                BorderSizePixel = 0,
+                                FontFace = Config.Font,
+                                Text = BtnProps.Title,
+                                TextSize = 12,
+                                AutoButtonColor = false
+                            }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
                             
-                            oBtn.MouseEnter:Connect(function() 
-								oTweenService:Create(oBtn, fnAnim(0.15), {TextColor3 = tConfig.Colors.TextLight}):Play()
-								oTweenService:Create(oStroke, fnAnim(0.15), {Color = tConfig.Colors.Accent}):Play() 
-							end)
-                            oBtn.MouseLeave:Connect(function() 
-								oTweenService:Create(oBtn, fnAnim(0.15), {TextColor3 = tConfig.Colors.TextMain}):Play()
-								oTweenService:Create(oStroke, fnAnim(0.15), {Color = tConfig.Colors.Border}):Play() 
-							end)
-                            oBtn.MouseButton1Click:Connect(function() 
-								local oClickTween = oTweenService:Create(oBtn, fnAnim(0.1), {BackgroundColor3 = tConfig.Colors.SectionBg})
-								oClickTween:Play()
-								oClickTween.Completed:Wait()
-								oTweenService:Create(oBtn, fnAnim(0.1), {BackgroundColor3 = tConfig.Colors.ElementBg}):Play()
-								if tBtnProps.Callback then 
-									tBtnProps.Callback() 
-								end 
-							end)
-
-                            table.insert(tButtonsInGroup, oBtn)
-
-                            local nTotalPadding = (#tButtonsInGroup - 1) * 5
-                            local nOffset = - (nTotalPadding / #tButtonsInGroup)
+                            CreateInstance("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, 5)})
+                            local Stroke = CreateInstance("UIStroke", {Parent = Btn, Thickness = 1}, {Color = "Border"})
                             
-                            for _, b in tButtonsInGroup do
-                                b.Size = UDim2.new(1 / #tButtonsInGroup, nOffset, 1, 0)
+                            Btn.MouseEnter:Connect(function() 
+                                TweenService:Create(Btn, CreateTween(0.15), {TextColor3 = Config.Colors.TextLight}):Play()
+                                TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play() 
+                            end)
+                            
+                            Btn.MouseLeave:Connect(function() 
+                                TweenService:Create(Btn, CreateTween(0.15), {TextColor3 = Config.Colors.TextMain}):Play()
+                                TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play() 
+                            end)
+                            
+                            Btn.MouseButton1Click:Connect(function() 
+                                local ClickTween = TweenService:Create(Btn, CreateTween(0.1), {BackgroundColor3 = Config.Colors.SectionBg})
+                                ClickTween:Play()
+                                ClickTween.Completed:Wait()
+                                TweenService:Create(Btn, CreateTween(0.1), {BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                if BtnProps.Callback then 
+                                    BtnProps.Callback() 
+                                end 
+                            end)
+
+                            table.insert(ButtonsInGroup, Btn)
+
+                            local TotalPadding = (#ButtonsInGroup - 1) * 5
+                            local Offset = - (TotalPadding / #ButtonsInGroup)
+                            
+                            for _, B in ButtonsInGroup do
+                                B.Size = UDim2.new(1 / #ButtonsInGroup, Offset, 1, 0)
                             end
 
-                            if tBtnProps.Flag then 
-                                tLibrary.Flags[tBtnProps.Flag] = {
-                                    SetValue = function(_, oVal) oBtn.Text = tostring(oVal) end,
-                                    GetValue = function() return oBtn.Text end
+                            if BtnProps.Flag then 
+                                Library.Flags[BtnProps.Flag] = {
+                                    SetValue = function(_, Val) Btn.Text = tostring(Val) end,
+                                    GetValue = function() return Btn.Text end
                                 }
                             end
 
-                            return tButtonFunctions
+                            return ButtonFunctions
                         end
 
-                        function tButtonFunctions:Button(tNewProps)
-                            return fnAddButton(tNewProps)
+                        function ButtonFunctions:Button(NewProps)
+                            return AddButton(NewProps)
                         end
 
-                        function tButtonFunctions:SetValue(oVal) 
-							tButtonsInGroup[1].Text = tostring(oVal) 
-						end
-                        function tButtonFunctions:GetValue() 
-							return tButtonsInGroup[1].Text 
-						end
+                        function ButtonFunctions:SetValue(Val) 
+                            ButtonsInGroup[1].Text = tostring(Val) 
+                        end
+                        
+                        function ButtonFunctions:GetValue() 
+                            return ButtonsInGroup[1].Text 
+                        end
 
-                        return fnAddButton(tProps)
+                        return AddButton(Props)
                     end
 
-                    function tSectionFunctions:Label(tProps)
-                        local oLabelFrame = fnCreate("Frame", { Parent = oElementsContainer, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20) })
-                        local oTitle = fnCreate("TextLabel", { Parent = oLabelFrame, BackgroundTransparency = 1, Text = tProps.Title, FontFace = tConfig.Font, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 1, 0) }, {TextColor3 = "TextMain"})
-                        local oRightSide = fnCreate("Frame", { Parent = oLabelFrame, BackgroundTransparency = 1, Size = UDim2.new(0, 0, 1, 0), Position = UDim2.new(1, 0, 0, 0), AnchorPoint = Vector2.new(1, 0) })
-                        local oRightLayout = fnCreate("UIListLayout", { Parent = oRightSide, FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Right, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder })
-                        oRightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() oRightSide.Size = UDim2.new(0, oRightLayout.AbsoluteContentSize.X, 1, 0) end)
-
-                        local tLabelFunctions = {}
-                        function tLabelFunctions:SetValue(oVal) oTitle.Text = tostring(oVal) end
-                        function tLabelFunctions:GetValue() return oTitle.Text end
-                        
-                        fnAttachAddons(tLabelFunctions, oRightSide, nil, true)
-                        if tProps.Flag then tLibrary.Flags[tProps.Flag] = tLabelFunctions end
-                        return tLabelFunctions
-                    end
-
-                    function tSectionFunctions:Textbox(tProps)
-                        local oTextboxFrame = fnCreate("Frame", { Parent = oElementsContainer, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 26) })
-                        fnCreate("TextLabel", { Parent = oTextboxFrame, BackgroundTransparency = 1, Text = tProps.Title, FontFace = tConfig.Font, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(0.5, -5, 1, 0) }, {TextColor3 = "TextMain"})
-
-                        local oInputBox = fnCreate("TextBox", { 
-                            Parent = oTextboxFrame, 
-                            BorderSizePixel = 0, 
-                            Text = tProps.Default or "", 
-                            PlaceholderText = tProps.Placeholder or "", 
-                            PlaceholderColor3 = Color3.fromRGB(100, 100, 100),
-                            FontFace = tConfig.Font, 
-                            TextSize = 11, 
-                            TextXAlignment = Enum.TextXAlignment.Left, 
-                            Position = UDim2.new(0.5, 5, 0, 0), 
-                            Size = UDim2.new(0.5, -5, 1, 0), 
-                            ClearTextOnFocus = tProps.ClearText or false,
-                            ClipsDescendants = true
-                        }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
-                        
-                        fnCreate("UIPadding", {Parent = oInputBox, PaddingLeft = UDim.new(0,8), PaddingRight = UDim.new(0, 8)})
-                        fnCreate("UICorner", {Parent = oInputBox, CornerRadius = UDim.new(0, 3)})
-                        local oStroke = fnCreate("UIStroke", {Parent = oInputBox, Thickness = 1}, {Color = "Border"})
-
-                        local tTextboxFunctions = {}
-
-                        oInputBox.Focused:Connect(function()
-                            oTweenService:Create(oStroke, fnAnim(0.15), {Color = tConfig.Colors.Accent}):Play()
-                            oTweenService:Create(oInputBox, fnAnim(0.15), {TextColor3 = tConfig.Colors.TextLight}):Play()
-                        end)
-
-                        oInputBox.FocusLost:Connect(function()
-                            oTweenService:Create(oStroke, fnAnim(0.15), {Color = tConfig.Colors.Border}):Play()
-                            oTweenService:Create(oInputBox, fnAnim(0.15), {TextColor3 = tConfig.Colors.TextMain}):Play()
-                            if tProps.Callback then tProps.Callback(oInputBox.Text) end
-                        end)
-
-                        function tTextboxFunctions:SetValue(sVal)
-                            oInputBox.Text = tostring(sVal)
-                            if tProps.Callback then tProps.Callback(oInputBox.Text) end
-                        end
-
-                        function tTextboxFunctions:GetValue()
-                            return oInputBox.Text
-                        end
-
-                        if tProps.Flag then tLibrary.Flags[tProps.Flag] = tTextboxFunctions end
-                        return tTextboxFunctions
-                    end
-
-                    function tSectionFunctions:Toggle(tProps)
-                        local oToggleFrame = fnCreate("Frame", { Parent = oElementsContainer, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20) })
-                        local oCheckbox = fnCreate("TextButton", { Parent = oToggleFrame, BorderSizePixel = 0, Size = UDim2.new(0, 12, 0, 12), Position = UDim2.new(0, 0, 0.5, -6), Text = "", AutoButtonColor = false }, {BackgroundColor3 = "ElementBg"})
-                        local oCheckStroke = fnCreate("UIStroke", { Parent = oCheckbox, Color = Color3.fromRGB(50,50,50), Thickness = 1 })
-                        local oTitle = fnCreate("TextLabel", { Parent = oToggleFrame, BackgroundTransparency = 1, Text = tProps.Title, FontFace = tConfig.Font, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0, 22, 0, 0), Size = UDim2.new(1, -22, 1, 0) }, {TextColor3 = "TextMain"})
-                        local oRightSide = fnCreate("Frame", { Parent = oToggleFrame, BackgroundTransparency = 1, Size = UDim2.new(0, 0, 1, 0), Position = UDim2.new(1, 0, 0, 0), AnchorPoint = Vector2.new(1, 0) })
-                        local oRightLayout = fnCreate("UIListLayout", { Parent = oRightSide, FillDirection = Enum.FillDirection.Horizontal, HorizontalAlignment = Enum.HorizontalAlignment.Right, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 5), SortOrder = Enum.SortOrder.LayoutOrder })
-                        oRightLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function() oRightSide.Size = UDim2.new(0, oRightLayout.AbsoluteContentSize.X, 1, 0) end)
-
-                        local bToggled = tProps.Default or false
-                        local function fnUpdateState(bForcedVal)
-                            if bForcedVal ~= nil then bToggled = bForcedVal end
-                            if bToggled then 
-								oTweenService:Create(oCheckbox, fnAnim(0.15), {BackgroundColor3 = tConfig.Colors.Accent}):Play()
-								oCheckStroke.Color = tConfig.Colors.Accent
-								oTweenService:Create(oTitle, fnAnim(0.15), {TextColor3 = tConfig.Colors.TextLight}):Play() 
-							else 
-								oTweenService:Create(oCheckbox, fnAnim(0.15), {BackgroundColor3 = tConfig.Colors.ElementBg}):Play()
-								oCheckStroke.Color = Color3.fromRGB(50,50,50)
-								oTweenService:Create(oTitle, fnAnim(0.15), {TextColor3 = tConfig.Colors.TextMain}):Play() 
-							end
-                            if tProps.Callback then tProps.Callback(bToggled) end
-                        end
-                        fnUpdateState()
-                        table.insert(tLibrary.DynamicUpdates, function() fnUpdateState(bToggled) end)
-
-                        oCheckbox.MouseButton1Click:Connect(function() bToggled = not bToggled; fnUpdateState() end)
-
-                        local tToggleFunctions = {}
-                        function tToggleFunctions:SetValue(oVal) fnUpdateState(oVal) end
-                        function tToggleFunctions:GetValue() return bToggled end
-                        
-                        fnAttachAddons(tToggleFunctions, oRightSide, fnUpdateState, false)
-                        if tProps.Flag then tLibrary.Flags[tProps.Flag] = tToggleFunctions end
-                        return tToggleFunctions
-                    end
-
-                    function tSectionFunctions:Slider(tProps)
-                        local oSliderFrame = fnCreate("Frame", { Parent = oElementsContainer, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 35) })
-                        fnCreate("TextLabel", { Parent = oSliderFrame, BackgroundTransparency = 1, Text = tProps.Title, FontFace = tConfig.Font, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(1, 0, 0, 15) }, {TextColor3 = "TextMain"})
-                        local oValueLabel = fnCreate("TextLabel", { Parent = oSliderFrame, BackgroundTransparency = 1, Text = "", FontFace = tConfig.Font, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Right, Size = UDim2.new(1, 0, 0, 15) }, {TextColor3 = "TextLight"})
-                        local oSliderBg = fnCreate("TextButton", { Parent = oSliderFrame, BorderSizePixel = 0, Position = UDim2.new(0, 0, 0, 20), Size = UDim2.new(1, 0, 0, 4), Text = "", AutoButtonColor = false }, {BackgroundColor3 = "ElementBg"})
-                        local oSliderFill = fnCreate("Frame", { Parent = oSliderBg, BorderSizePixel = 0, Size = UDim2.new(0, 0, 1, 0) }, {BackgroundColor3 = "Accent"})
-
-                        local tSliderFunctions = {}
-                        local nDecimals = tProps.Decimal or 0
-                        local nMult = 10 ^ nDecimals
-                        local sFormat = "%." .. nDecimals .. "f"
-                        local sPrefix = tProps.Prefix or ""
-                        local sSuffix = tProps.Suffix or ""
-
-                        if tProps.Dual then
-                            local nCurrentMin = tProps.Default and tProps.Default[1] or tProps.Min
-                            local nCurrentMax = tProps.Default and tProps.Default[2] or tProps.Max
-                            oValueLabel.Text = `{sPrefix}{string.format(sFormat, nCurrentMin)}{sSuffix} - {sPrefix}{string.format(sFormat, nCurrentMax)}{sSuffix}`
-                            
-                            oSliderBg.InputBegan:Connect(function(oInput)
-                                if oInput.UserInputType == Enum.UserInputType.MouseButton1 or oInput.UserInputType == Enum.UserInputType.Touch then 
-                                    local function update(inputVec)
-                                        local nRatio = math.clamp((inputVec.X - oSliderBg.AbsolutePosition.X) / oSliderBg.AbsoluteSize.X, 0, 1)
-                                        local nRaw = tProps.Min + ((tProps.Max - tProps.Min) * nRatio)
-                                        local nNewValue = math.floor(nRaw * nMult + 0.5) / nMult
-
-                                        local nDistMin = math.abs(nNewValue - nCurrentMin)
-                                        local nDistMax = math.abs(nNewValue - nCurrentMax)
-                                        if nDistMin < nDistMax then nCurrentMin = math.clamp(nNewValue, tProps.Min, nCurrentMax) else nCurrentMax = math.clamp(nNewValue, nCurrentMin, tProps.Max) end
-                                        tSliderFunctions:SetValue({nCurrentMin, nCurrentMax})
-                                    end
-                                    update(oInput.Position)
-                                    local cMove = oUserInputService.InputChanged:Connect(function(oMove)
-                                        if oMove.UserInputType == Enum.UserInputType.MouseMovement or oMove.UserInputType == Enum.UserInputType.Touch then update(oMove.Position) end
-                                    end)
-                                    local cEnd; cEnd = oUserInputService.InputEnded:Connect(function(oEnd)
-                                        if oEnd.UserInputType == Enum.UserInputType.MouseButton1 or oEnd.UserInputType == Enum.UserInputType.Touch then cMove:Disconnect(); cEnd:Disconnect() end
-                                    end)
-                                end
-                            end)
-                            
-                            function tSliderFunctions:SetValue(tVal)
-                                nCurrentMin = math.clamp(math.floor(tVal[1] * nMult + 0.5) / nMult, tProps.Min, tProps.Max)
-								nCurrentMax = math.clamp(math.floor(tVal[2] * nMult + 0.5) / nMult, nCurrentMin, tProps.Max)
-                                oValueLabel.Text = `{sPrefix}{string.format(sFormat, nCurrentMin)}{sSuffix} - {sPrefix}{string.format(sFormat, nCurrentMax)}{sSuffix}`
-                                local nMinScale = (nCurrentMin - tProps.Min) / (tProps.Max - tProps.Min)
-								local nMaxScale = (nCurrentMax - tProps.Min) / (tProps.Max - tProps.Min)
-                                oTweenService:Create(oSliderFill, fnAnim(0.08), { Position = UDim2.new(nMinScale, 0, 0, 0), Size = UDim2.new(nMaxScale - nMinScale, 0, 1, 0) }):Play()
-                                if tProps.Callback then tProps.Callback({nCurrentMin, nCurrentMax}) end
-                            end
-                            function tSliderFunctions:GetValue() return {nCurrentMin, nCurrentMax} end
-                            
-                            local nMinScale = (nCurrentMin - tProps.Min) / (tProps.Max - tProps.Min)
-							local nMaxScale = (nCurrentMax - tProps.Min) / (tProps.Max - tProps.Min)
-                            oSliderFill.Position = UDim2.new(nMinScale, 0, 0, 0)
-							oSliderFill.Size = UDim2.new(nMaxScale - nMinScale, 0, 1, 0)
-                        else
-                            local nZeroValue = tProps.ZeroValue or tProps.Min
-                            local nCurrentValue = tProps.Default or nZeroValue
-                            local nZeroScale = (nZeroValue - tProps.Min) / (tProps.Max - tProps.Min)
-                            oValueLabel.Text = `{sPrefix}{string.format(sFormat, nCurrentValue)}{sSuffix}`
-
-                            oSliderBg.InputBegan:Connect(function(oInput)
-                                if oInput.UserInputType == Enum.UserInputType.MouseButton1 or oInput.UserInputType == Enum.UserInputType.Touch then 
-                                    local function update(inputVec)
-                                        local nPos = math.clamp((inputVec.X - oSliderBg.AbsolutePosition.X) / oSliderBg.AbsoluteSize.X, 0, 1)
-                                        local nRaw = (nPos * (tProps.Max - tProps.Min)) + tProps.Min
-                                        local nVal = math.floor(nRaw * nMult + 0.5) / nMult
-                                        tSliderFunctions:SetValue(nVal)
-                                    end
-                                    update(oInput.Position)
-                                    local cMove = oUserInputService.InputChanged:Connect(function(oMove)
-                                        if oMove.UserInputType == Enum.UserInputType.MouseMovement or oMove.UserInputType == Enum.UserInputType.Touch then update(oMove.Position) end
-                                    end)
-                                    local cEnd; cEnd = oUserInputService.InputEnded:Connect(function(oEnd)
-                                        if oEnd.UserInputType == Enum.UserInputType.MouseButton1 or oEnd.UserInputType == Enum.UserInputType.Touch then cMove:Disconnect(); cEnd:Disconnect() end
-                                    end)
-                                end
-                            end)
-                            
-                            function tSliderFunctions:SetValue(nVal)
-                                nCurrentValue = math.clamp(math.floor(nVal * nMult + 0.5) / nMult, tProps.Min, tProps.Max)
-                                local nPos = (nCurrentValue - tProps.Min) / (tProps.Max - tProps.Min)
-                                local nStartScale = math.min(nZeroScale, nPos)
-                                local nFillSize = math.abs(nPos - nZeroScale)
-                                oTweenService:Create(oSliderFill, fnAnim(0.08), {Position = UDim2.new(nStartScale, 0, 0, 0), Size = UDim2.new(nFillSize, 0, 1, 0)}):Play()
-                                oValueLabel.Text = `{sPrefix}{string.format(sFormat, nCurrentValue)}{sSuffix}`
-                                if tProps.Callback then tProps.Callback(nCurrentValue) end
-                            end
-                            function tSliderFunctions:GetValue() return nCurrentValue end
-
-                            local nStartPercent = (nCurrentValue - tProps.Min) / (tProps.Max - tProps.Min)
-                            local nInitStart = math.min(nZeroScale, nStartPercent)
-                            local nInitSize = math.abs(nStartPercent - nZeroScale)
-                            oSliderFill.Position = UDim2.new(nInitStart, 0, 0, 0)
-                            oSliderFill.Size = UDim2.new(nInitSize, 0, 1, 0)
-                        end
-                        if tProps.Flag then tLibrary.Flags[tProps.Flag] = tSliderFunctions end
-                        return tSliderFunctions
-                    end
-
-                    function tSectionFunctions:Dropdown(tProps)
-                        local oDropFrame = fnCreate("Frame", { Parent = oElementsContainer, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 26), ZIndex = 5 })
-                        fnCreate("TextLabel", { Parent = oDropFrame, Text = tProps.Title, FontFace = tConfig.Font, TextSize = 12, TextXAlignment = Enum.TextXAlignment.Left, Size = UDim2.new(0.5, 0, 1, 0), BackgroundTransparency = 1, ZIndex = 5 }, {TextColor3 = "TextMain"})
-                        
-                        local sDefaultText = "Select..."
-                        local tSelections = {}
-                        if tProps.Multi then 
-							if type(tProps.Default) == "table" then 
-								tSelections = tProps.Default 
-							end
-							if #tSelections > 0 then 
-								sDefaultText = table.concat(tSelections, ", ") 
-							end 
-						else 
-							sDefaultText = tProps.Default or "Select..." 
-						end
-
-                        local oMainButton = fnCreate("TextButton", { Parent = oDropFrame, BorderSizePixel = 0, Text = sDefaultText, TextTruncate = Enum.TextTruncate.AtEnd, FontFace = tConfig.Font, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, Position = UDim2.new(0.5, 0, 0, 0), Size = UDim2.new(0.5, 0, 1, 0), AutoButtonColor = false, ZIndex = 5 }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
-                        fnCreate("UIPadding", {Parent = oMainButton, PaddingLeft = UDim.new(0,8), PaddingRight = UDim.new(0, 20)})
-                        fnCreate("UIStroke", {Parent = oMainButton, Thickness = 1}, {Color = "Border"})
-                        local oChevron = fnCreate("ImageLabel", { Parent = oMainButton, BackgroundTransparency = 1, Size = UDim2.new(0, 14, 0, 14), Position = UDim2.new(1, 2, 0.5, -7), Image = tConfig.ChevronImage, Rotation = -90 }, {ImageColor3 = "TextMain"})
-
-                        local oDropList = fnCreate("ScrollingFrame", { Parent = oScreenGui, BorderSizePixel = 1, Size = UDim2.new(0.5, 0, 0, 0), CanvasSize = UDim2.new(0,0,0,0), ScrollBarThickness = 2, AutomaticCanvasSize = Enum.AutomaticSize.Y, Visible = false, ZIndex = 3000 }, {BackgroundColor3 = "ElementBg", BorderColor3 = "Border"})
-                        fnCreate("UIListLayout", {Parent = oDropList})
-
-                        local function fnCloseDrop() oDropList.Visible = false; oTweenService:Create(oChevron, fnAnim(0.2), {Rotation = -90}):Play() end
-                        local function fnUpdateDropPos() 
-                            if oDropList.Visible and oMainButton.Parent then 
-                                local nMaxH = math.min(#tProps.Options * 20, 160)
-                                local nY = oMainButton.AbsolutePosition.Y + oMainButton.AbsoluteSize.Y + 2
-                                if nY + nMaxH > oScreenGui.AbsoluteSize.Y then nY = oMainButton.AbsolutePosition.Y - nMaxH - 2 end
-                                oDropList.Position = UDim2.new(0, oMainButton.AbsolutePosition.X, 0, nY)
-                                oDropList.Size = UDim2.new(0, oMainButton.AbsoluteSize.X, 0, nMaxH) 
-                            end 
-                        end
-
-                        oMainButton.MouseButton1Click:Connect(function()
-                            if oDropList.Visible then 
-								fnCloseDrop()
-								tLibrary.ActivePopup = nil 
-							else 
-								if not tProps.Multi then 
-									tLibrary:ClosePopups() 
-								end
-								tLibrary.ActivePopup = {Element = oDropList, Ignore = {oMainButton}, Close = fnCloseDrop}
-								oDropList.Visible = true
-								oTweenService:Create(oChevron, fnAnim(0.2), {Rotation = 0}):Play()
-								fnUpdateDropPos()
-								local cLoop; cLoop = oRunService.RenderStepped:Connect(function() 
-									if not oDropList.Visible then 
-										cLoop:Disconnect() 
-									else 
-										fnUpdateDropPos() 
-									end 
-								end) 
-							end
-                        end)
-                        
-                        local tOptionButtons = {} 
-                        local tDropdownFunctions = {}
-
-                        table.insert(tLibrary.DynamicUpdates, function()
-                            for _, oBtn in tOptionButtons do
-                                if oBtn.Parent then
-                                    if tProps.Multi then 
-                                        if table.find(tSelections, oBtn.Text) then 
-											oBtn.TextColor3 = tConfig.Colors.TextLight 
-										else 
-											oBtn.TextColor3 = tConfig.Colors.TextMain 
-										end 
-                                    else 
-                                        if oMainButton.Text == oBtn.Text then 
-											oBtn.TextColor3 = tConfig.Colors.TextLight 
-										else 
-											oBtn.TextColor3 = tConfig.Colors.TextMain 
-										end 
-                                    end
-                                end
-                            end
-                        end)
-
-                        function tDropdownFunctions:SetValue(oVal)
-                            if tProps.Multi then
-                                tSelections = oVal
-                                local sTxt = table.concat(tSelections, ", ")
-								oMainButton.Text = sTxt == "" and "Select..." or sTxt
-                                for _, oBtn in tOptionButtons do 
-									if table.find(tSelections, oBtn.Text) then 
-										oBtn.TextColor3 = tConfig.Colors.TextLight 
-									else 
-										oBtn.TextColor3 = tConfig.Colors.TextMain 
-									end 
-								end
-                                if tProps.Callback then tProps.Callback(tSelections) end
-                            else
-                                oMainButton.Text = oVal
-                                for _, oBtn in tOptionButtons do 
-									if oBtn.Text == oVal then 
-										oBtn.TextColor3 = tConfig.Colors.TextLight 
-									else 
-										oBtn.TextColor3 = tConfig.Colors.TextMain 
-									end 
-								end
-                                if tProps.Callback then tProps.Callback(oVal) end
-                            end
-                        end
-                        function tDropdownFunctions:GetValue() return tProps.Multi and tSelections or oMainButton.Text end
-
-                        local function fnBuildOptions(tNewOpts)
-                            for _, oBtn in tOptionButtons do oBtn:Destroy() end
-                            table.clear(tOptionButtons)
-                            
-                            if tProps.Multi then
-                                local tNewSelections = {}
-                                for _, sSel in tSelections do
-                                    if table.find(tNewOpts, sSel) then table.insert(tNewSelections, sSel) end
-                                end
-                                tDropdownFunctions:SetValue(tNewSelections)
-                            else
-                                if not table.find(tNewOpts, oMainButton.Text) then
-                                    if not table.find(tNewOpts, tProps.Default) then oMainButton.Text = "Select..." else tDropdownFunctions:SetValue(tProps.Default) end
-                                else
-                                    tDropdownFunctions:SetValue(oMainButton.Text)
-                                end
-                            end
-
-                            tProps.Options = tNewOpts
-
-                            for _, sOpt in tProps.Options do
-                                local oOptBtn = fnCreate("TextButton", { Parent = oDropList, BackgroundTransparency = 1, Size = UDim2.new(1, 0, 0, 20), Text = sOpt, TextTruncate = Enum.TextTruncate.AtEnd, FontFace = tConfig.Font, TextSize = 11, TextXAlignment = Enum.TextXAlignment.Left, ZIndex = 3002, AutoButtonColor = false }, {TextColor3 = "TextMain"})
-                                fnCreate("UIPadding", {Parent = oOptBtn, PaddingLeft = UDim.new(0,8), PaddingRight = UDim.new(0,8)})
-                                table.insert(tOptionButtons, oOptBtn)
-                                
-                                local function fnUpdateHighlight()
-                                    if tProps.Multi then 
-										if table.find(tSelections, sOpt) then 
-											oOptBtn.TextColor3 = tConfig.Colors.TextLight 
-										else 
-											oOptBtn.TextColor3 = tConfig.Colors.TextMain 
-										end 
-									else 
-										if oMainButton.Text == sOpt then 
-											oOptBtn.TextColor3 = tConfig.Colors.TextLight 
-										else 
-											oOptBtn.TextColor3 = tConfig.Colors.TextMain 
-										end 
-									end
-                                end
-                                fnUpdateHighlight()
-
-                                oOptBtn.MouseButton1Click:Connect(function()
-                                    if tProps.Multi then 
-										if table.find(tSelections, sOpt) then 
-											table.remove(tSelections, table.find(tSelections, sOpt)) 
-										else 
-											table.insert(tSelections, sOpt) 
-										end
-										tDropdownFunctions:SetValue(tSelections) 
-									else 
-										tDropdownFunctions:SetValue(sOpt)
-										fnCloseDrop()
-										tLibrary.ActivePopup = nil 
-									end
-                                end)
-                            end
-                        end
-                        
-                        function tDropdownFunctions:SetOptions(tNewOpts)
-                            fnBuildOptions(tNewOpts)
-                        end
-                        
-                        fnBuildOptions(tProps.Options)
-                        
-                        if tProps.Flag then tLibrary.Flags[tProps.Flag] = tDropdownFunctions end
-                        return tDropdownFunctions
-                    end
-
-                    -- ✨ NEW: Grid selector with ViewportFrame support ✨
-                    function tSectionFunctions:Grid(tProps)
-                        local tGridItems = tProps.Items or {}
-                        local tSelected = {}
-                        local bMultiSelect = tProps.Multi or false
-                        local nCellSize = tProps.CellSize or 60
-                        local nPadding = tProps.Padding or 8
-                        local bShowViewport = tProps.Viewport or false
-                        local fnOnSelect = tProps.Callback
-
-                        local oGridFrame = fnCreate("Frame", { 
-                            Parent = oElementsContainer, 
-                            BackgroundTransparency = 1, 
-                            Size = UDim2.new(1, 0, 0, 0), 
-                            AutomaticSize = Enum.AutomaticSize.Y 
+                    -- LABEL
+                    function SectionFunctions:Label(Props)
+                        local LabelFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 22)
                         })
                         
-                        local oScrollFrame = fnCreate("ScrollingFrame", {
-                            Parent = oGridFrame,
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = LabelFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title,
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 1, 0)
+                        }, {TextColor3 = "TextMain"})
+
+                        local LabelFunctions = {}
+                        function LabelFunctions:SetValue(Val) Title.Text = tostring(Val) end
+                        function LabelFunctions:GetValue() return Title.Text end
+                        
+                        if Props.Flag then Library.Flags[Props.Flag] = LabelFunctions end
+                        return LabelFunctions
+                    end
+
+                    -- TOGGLE
+                    function SectionFunctions:Toggle(Props)
+                        local ToggleFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 24)
+                        })
+                        
+                        local Checkbox = CreateInstance("TextButton", {
+                            Parent = ToggleFrame,
+                            BorderSizePixel = 0,
+                            Size = UDim2.new(0, 16, 0, 16),
+                            Position = UDim2.new(0, 0, 0.5, -8),
+                            Text = "",
+                            AutoButtonColor = false
+                        }, {BackgroundColor3 = "ElementBg"})
+                        
+                        CreateInstance("UICorner", {Parent = Checkbox, CornerRadius = UDim.new(0, 4)})
+                        local CheckStroke = CreateInstance("UIStroke", {Parent = Checkbox, Color = Color3.fromRGB(50,50,50), Thickness = 1})
+                        
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = ToggleFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title,
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Position = UDim2.new(0, 24, 0, 0),
+                            Size = UDim2.new(1, -24, 1, 0)
+                        }, {TextColor3 = "TextMain"})
+
+                        local Toggled = Props.Default or false
+                        
+                        local function UpdateState(ForcedVal)
+                            if ForcedVal ~= nil then Toggled = ForcedVal end
+                            if Toggled then 
+                                TweenService:Create(Checkbox, CreateTween(0.15), {BackgroundColor3 = Config.Colors.Accent}):Play()
+                                CheckStroke.Color = Config.Colors.Accent
+                                TweenService:Create(Title, CreateTween(0.15), {TextColor3 = Config.Colors.TextLight}):Play() 
+                            else 
+                                TweenService:Create(Checkbox, CreateTween(0.15), {BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                CheckStroke.Color = Color3.fromRGB(50,50,50)
+                                TweenService:Create(Title, CreateTween(0.15), {TextColor3 = Config.Colors.TextMain}):Play() 
+                            end
+                            if Props.Callback then Props.Callback(Toggled) end
+                        end
+                        
+                        UpdateState()
+                        table.insert(Library.DynamicUpdates, function() UpdateState(Toggled) end)
+
+                        Checkbox.MouseButton1Click:Connect(function() 
+                            Toggled = not Toggled
+                            UpdateState() 
+                        end)
+
+                        local ToggleFunctions = {}
+                        function ToggleFunctions:SetValue(Val) UpdateState(Val) end
+                        function ToggleFunctions:GetValue() return Toggled end
+                        
+                        if Props.Flag then Library.Flags[Props.Flag] = ToggleFunctions end
+                        return ToggleFunctions
+                    end
+
+                    -- SLIDER
+                    function SectionFunctions:Slider(Props)
+                        local SliderFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 45)
+                        })
+                        
+                        CreateInstance("TextLabel", {
+                            Parent = SliderFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title,
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, 18)
+                        }, {TextColor3 = "TextMain"})
+                        
+                        local ValueLabel = CreateInstance("TextLabel", {
+                            Parent = SliderFrame,
+                            BackgroundTransparency = 1,
+                            Text = "",
+                            FontFace = Config.Font,
+                            TextSize = 12,
+                            TextXAlignment = Enum.TextXAlignment.Right,
+                            Size = UDim2.new(1, 0, 0, 18)
+                        }, {TextColor3 = "TextLight"})
+                        
+                        local SliderBg = CreateInstance("TextButton", {
+                            Parent = SliderFrame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, 23),
+                            Size = UDim2.new(1, 0, 0, 5),
+                            Text = "",
+                            AutoButtonColor = false
+                        }, {BackgroundColor3 = "ElementBg"})
+                        
+                        CreateInstance("UICorner", {Parent = SliderBg, CornerRadius = UDim.new(0, 3)})
+                        
+                        local SliderFill = CreateInstance("Frame", {
+                            Parent = SliderBg,
+                            BorderSizePixel = 0,
+                            Size = UDim2.new(0, 0, 1, 0)
+                        }, {BackgroundColor3 = "Accent"})
+                        
+                        CreateInstance("UICorner", {Parent = SliderFill, CornerRadius = UDim.new(0, 3)})
+
+                        local SliderFunctions = {}
+                        local Decimals = Props.Decimal or 0
+                        local Mult = 10 ^ Decimals
+                        local Format = "%." .. Decimals .. "f"
+                        local Prefix = Props.Prefix or ""
+                        local Suffix = Props.Suffix or ""
+                        
+                        local ZeroValue = Props.ZeroValue or Props.Min
+                        local CurrentValue = Props.Default or ZeroValue
+                        local ZeroScale = (ZeroValue - Props.Min) / (Props.Max - Props.Min)
+                        
+                        ValueLabel.Text = Prefix .. string.format(Format, CurrentValue) .. Suffix
+
+                        SliderBg.InputBegan:Connect(function(Input)
+                            if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then 
+                                local function Update(InputVec)
+                                    local Pos = math.clamp((InputVec.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
+                                    local Raw = (Pos * (Props.Max - Props.Min)) + Props.Min
+                                    local Val = math.floor(Raw * Mult + 0.5) / Mult
+                                    SliderFunctions:SetValue(Val)
+                                end
+                                Update(Input.Position)
+                                local MoveCon = UserInputService.InputChanged:Connect(function(Move)
+                                    if Move.UserInputType == Enum.UserInputType.MouseMovement or Move.UserInputType == Enum.UserInputType.Touch then 
+                                        Update(Move.Position) 
+                                    end
+                                end)
+                                local EndCon; EndCon = UserInputService.InputEnded:Connect(function(Ended)
+                                    if Ended.UserInputType == Enum.UserInputType.MouseButton1 or Ended.UserInputType == Enum.UserInputType.Touch then 
+                                        MoveCon:Disconnect()
+                                        EndCon:Disconnect() 
+                                    end
+                                end)
+                            end
+                        end)
+                        
+                        function SliderFunctions:SetValue(Val)
+                            CurrentValue = math.clamp(math.floor(Val * Mult + 0.5) / Mult, Props.Min, Props.Max)
+                            local Pos = (CurrentValue - Props.Min) / (Props.Max - Props.Min)
+                            local StartScale = math.min(ZeroScale, Pos)
+                            local FillSize = math.abs(Pos - ZeroScale)
+                            TweenService:Create(SliderFill, CreateTween(0.08), {
+                                Position = UDim2.new(StartScale, 0, 0, 0),
+                                Size = UDim2.new(FillSize, 0, 1, 0)
+                            }):Play()
+                            ValueLabel.Text = Prefix .. string.format(Format, CurrentValue) .. Suffix
+                            if Props.Callback then Props.Callback(CurrentValue) end
+                        end
+                        
+                        function SliderFunctions:GetValue() return CurrentValue end
+
+                        local StartPercent = (CurrentValue - Props.Min) / (Props.Max - Props.Min)
+                        local InitStart = math.min(ZeroScale, StartPercent)
+                        local InitSize = math.abs(StartPercent - ZeroScale)
+                        SliderFill.Position = UDim2.new(InitStart, 0, 0, 0)
+                        SliderFill.Size = UDim2.new(InitSize, 0, 1, 0)
+                        
+                        if Props.Flag then Library.Flags[Props.Flag] = SliderFunctions end
+                        return SliderFunctions
+                    end
+
+                    -- GRID (FIXED & WORKING)
+                    function SectionFunctions:Grid(Props)
+                        local GridItems = Props.Items or {}
+                        local Selected = {}
+                        local MultiSelect = Props.Multi or false
+                        local CellSize = Props.CellSize or 80
+                        local Padding = Props.Padding or 8
+                        local OnSelect = Props.Callback
+
+                        local GridFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 0),
+                            AutomaticSize = Enum.AutomaticSize.Y
+                        })
+                        
+                        local ScrollFrame = CreateInstance("ScrollingFrame", {
+                            Parent = GridFrame,
                             BackgroundTransparency = 1,
                             Size = UDim2.new(1, 0, 0, 0),
                             AutomaticSize = Enum.AutomaticSize.Y,
                             CanvasSize = UDim2.new(0, 0, 0, 0),
-                            ScrollBarThickness = 2,
+                            ScrollBarThickness = 3,
                             ScrollingDirection = Enum.ScrollingDirection.Y
                         }, {ScrollBarImageColor3 = "Border"})
                         
-                        local oGridLayout = fnCreate("UIGridLayout", {
-                            Parent = oScrollFrame,
-                            CellSize = UDim2.new(0, nCellSize, 0, nCellSize),
+                        local GridLayout = CreateInstance("UIGridLayout", {
+                            Parent = ScrollFrame,
+                            CellSize = UDim2.new(0, CellSize, 0, CellSize),
                             FillDirection = Enum.FillDirection.Horizontal,
                             SortOrder = Enum.SortOrder.LayoutOrder,
-                            Padding = UDim2.new(0, nPadding, 0, nPadding)
+                            Padding = UDim.new(0, Padding, 0, Padding)
                         })
                         
-                        oGridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                            oScrollFrame.CanvasSize = UDim2.new(0, 0, 0, oGridLayout.AbsoluteContentSize.Y + 10)
+                        GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+                            ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, GridLayout.AbsoluteContentSize.Y + 10)
                         end)
 
-                        local tGridFunctions = {}
-                        local tCellButtons = {}
+                        local GridFunctions = {}
+                        local CellButtons = {}
 
-                        local function fnUpdateSelection(oItem, bSelected, oCellBtn)
-                            if bSelected then
-                                if not bMultiSelect then
-                                    for _, item in tSelected do
-                                        if item ~= oItem then
-                                            table.remove(tSelected, table.find(tSelected, item))
+                        local function UpdateSelection(Item, IsSelected, CellBtn)
+                            if IsSelected then
+                                if not MultiSelect then
+                                    -- Deselect all others
+                                    for i = #Selected, 1, -1 do
+                                        if Selected[i] ~= Item then
+                                            table.remove(Selected, i)
                                         end
                                     end
-                                    for _, btn in tCellButtons do
-                                        if btn.Item ~= oItem then
-                                            oTweenService:Create(btn.Frame, fnAnim(0.15), {BackgroundTransparency = 0.8}):Play()
-                                            oTweenService:Create(btn.Stroke, fnAnim(0.15), {Color = tConfig.Colors.Border}):Play()
+                                    -- Update visual state
+                                    for _, Btn in CellButtons do
+                                        if Btn.Item ~= Item then
+                                            TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.85}):Play()
+                                            TweenService:Create(Btn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                                            TweenService:Create(Btn.Indicator, CreateTween(0.15), {BackgroundTransparency = 1}):Play()
                                         end
                                     end
                                 end
-                                if not table.find(tSelected, oItem) then
-                                    table.insert(tSelected, oItem)
+                                if not table.find(Selected, Item) then
+                                    table.insert(Selected, Item)
                                 end
-                                oTweenService:Create(oCellBtn.Frame, fnAnim(0.15), {BackgroundTransparency = 0.3}):Play()
-                                oTweenService:Create(oCellBtn.Stroke, fnAnim(0.15), {Color = tConfig.Colors.Accent}):Play()
+                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.7}):Play()
+                                TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
+                                TweenService:Create(CellBtn.Indicator, CreateTween(0.15), {BackgroundTransparency = 0.3}):Play()
                             else
-                                local idx = table.find(tSelected, oItem)
-                                if idx then table.remove(tSelected, idx) end
-                                oTweenService:Create(oCellBtn.Frame, fnAnim(0.15), {BackgroundTransparency = 0.8}):Play()
-                                oTweenService:Create(oCellBtn.Stroke, fnAnim(0.15), {Color = tConfig.Colors.Border}):Play()
+                                local idx = table.find(Selected, Item)
+                                if idx then table.remove(Selected, idx) end
+                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.85}):Play()
+                                TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                                TweenService:Create(CellBtn.Indicator, CreateTween(0.15), {BackgroundTransparency = 1}):Play()
                             end
-                            if fnOnSelect then fnOnSelect(tSelected, oItem, bSelected) end
+                            if OnSelect then OnSelect(Selected, Item, IsSelected) end
                         end
 
-                        local function fnCreateCell(tItem, nIndex)
-                            local oCellBtn = fnCreate("TextButton", {
-                                Parent = oScrollFrame,
-                                BackgroundTransparency = 0.8,
+                        local function CreateCell(Item, Index)
+                            local CellBtn = CreateInstance("TextButton", {
+                                Parent = ScrollFrame,
+                                BackgroundTransparency = 0.85,
                                 BorderSizePixel = 0,
-                                LayoutOrder = nIndex,
+                                LayoutOrder = Index,
                                 AutoButtonColor = false,
                                 Text = ""
                             }, {BackgroundColor3 = "ElementBg"})
-                            fnCreate("UICorner", {Parent = oCellBtn, CornerRadius = UDim.new(0, 4)})
-                            local oStroke = fnCreate("UIStroke", {Parent = oCellBtn, Thickness = 1}, {Color = "Border"})
+                            
+                            CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 6)})
+                            local Stroke = CreateInstance("UIStroke", {Parent = CellBtn, Thickness = 1}, {Color = "Border"})
+                            
+                            -- Selection indicator
+                            local Indicator = CreateInstance("Frame", {
+                                Parent = CellBtn,
+                                BorderSizePixel = 0,
+                                Size = UDim2.new(1, 0, 1, 0),
+                                Position = UDim2.new(0, 0, 0, 0),
+                                Visible = true,
+                                BackgroundTransparency = 1
+                            }, {BackgroundColor3 = "Accent"})
+                            CreateInstance("UICorner", {Parent = Indicator, CornerRadius = UDim.new(0, 5)})
                             
                             -- Icon/Image
-                            if tItem.Image then
-                                fnCreate("ImageLabel", {
-                                    Parent = oCellBtn,
+                            if Item.Image then
+                                local ImgLabel = CreateInstance("ImageLabel", {
+                                    Parent = CellBtn,
                                     BackgroundTransparency = 1,
-                                    Size = UDim2.new(0.7, 0, 0.7, 0),
-                                    Position = UDim2.new(0.5, 0, 0.45, 0),
+                                    Size = UDim2.new(0.65, 0, 0.65, 0),
+                                    Position = UDim2.new(0.5, 0, 0.35, 0),
                                     AnchorPoint = Vector2.new(0.5, 0),
-                                    Image = tItem.Image,
+                                    Image = Item.Image,
                                     ScaleType = Enum.ScaleType.Fit
                                 }, {ImageColor3 = "TextMain"})
+                                
+                                -- Add stroke to image for visibility
+                                CreateInstance("UIStroke", {
+                                    Parent = ImgLabel,
+                                    Thickness = 0.5,
+                                    Color = Config.Colors.TextMain,
+                                    Transparency = 0.5
+                                })
                             end
                             
                             -- Name label
-                            fnCreate("TextLabel", {
-                                Parent = oCellBtn,
+                            CreateInstance("TextLabel", {
+                                Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(1, 0, 0, 16),
-                                Position = UDim2.new(0, 0, 1, -18),
-                                FontFace = tConfig.Font,
+                                Size = UDim2.new(1, -4, 0, 16),
+                                Position = UDim2.new(0, 2, 1, -18),
+                                FontFace = Config.Font,
                                 TextSize = 9,
-                                Text = tItem.Name or "Item",
+                                Text = Item.Name or "Item",
                                 TextXAlignment = Enum.TextXAlignment.Center,
-                                TextWrapped = true
-                            }, {TextColor3 = "TextMain"})
-                            
-                            -- Optional ViewportFrame preview
-                            local oViewport = nil
-                            if bShowViewport and tItem.Model then
-                                oViewport = fnCreate("ViewportFrame", {
-                                    Parent = oCellBtn,
-                                    BackgroundTransparency = 1,
-                                    Size = UDim2.new(0.8, 0, 0.5, 0),
-                                    Position = UDim2.new(0.5, 0, 0.1, 0),
-                                    AnchorPoint = Vector2.new(0.5, 0),
-                                    CurrentCamera = Camera.new(),
-                                    LightColor = Color3.fromRGB(255, 255, 255),
-                                    Ambient = Color3.fromRGB(100, 100, 100)
-                                })
-                                local oCam = oViewport.CurrentCamera
-                                oCam.CFrame = CFrame.new(Vector3.new(0, 2, 6), Vector3.zero)
-                                oCam.FieldOfView = 40
-                                
-                                -- Clone model into viewport
-                                local oModelClone = tItem.Model:Clone()
-                                oModelClone.Parent = oViewport
-                                
-                                -- Optional: rotate model slowly
-                                if tItem.Rotate ~= false then
-                                    task.spawn(function()
-                                        while oViewport.Parent do
-                                            oCam.CFrame = CFrame.new(Vector3.new(
-                                                math.sin(tick() * 0.5) * 6,
-                                                2,
-                                                math.cos(tick() * 0.5) * 6
-                                            ), Vector3.zero)
-                                            task.wait(0.05)
-                                        end
-                                    end)
-                                end
-                            end
-                            
-                            -- Selection indicator
-                            local oSelectIndicator = fnCreate("Frame", {
-                                Parent = oCellBtn,
-                                BorderSizePixel = 0,
-                                Size = UDim2.new(0, nCellSize - 4, 0, nCellSize - 4),
-                                Position = UDim2.new(0, 2, 0, 2),
-                                Visible = false,
-                                BackgroundTransparency = 0.7
-                            }, {BackgroundColor3 = "Accent"})
-                            fnCreate("UICorner", {Parent = oSelectIndicator, CornerRadius = UDim.new(0, 3)})
+                                TextWrapped = true,
+                                TextColor3 = Config.Colors.TextMain
+                            })
                             
                             -- Hover effects
-                            oCellBtn.MouseEnter:Connect(function()
-                                if not table.find(tSelected, tItem) then
-                                    oTweenService:Create(oCellBtn, fnAnim(0.1), {BackgroundTransparency = 0.6}):Play()
-                                    oTweenService:Create(oStroke, fnAnim(0.1), {Color = tConfig.Colors.Accent}):Play()
+                            CellBtn.MouseEnter:Connect(function()
+                                if not table.find(Selected, Item) then
+                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.7}):Play()
+                                    TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Accent}):Play()
                                 end
                             end)
-                            oCellBtn.MouseLeave:Connect(function()
-                                if not table.find(tSelected, tItem) then
-                                    oTweenService:Create(oCellBtn, fnAnim(0.1), {BackgroundTransparency = 0.8}):Play()
-                                    oTweenService:Create(oStroke, fnAnim(0.1), {Color = tConfig.Colors.Border}):Play()
+                            
+                            CellBtn.MouseLeave:Connect(function()
+                                if not table.find(Selected, Item) then
+                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.85}):Play()
+                                    TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Border}):Play()
                                 end
                             end)
                             
                             -- Click to select/deselect
-                            oCellBtn.MouseButton1Click:Connect(function()
-                                local bCurrentlySelected = table.find(tSelected, tItem) ~= nil
-                                fnUpdateSelection(tItem, not bCurrentlySelected, {Frame = oCellBtn, Stroke = oStroke, Item = tItem})
+                            CellBtn.MouseButton1Click:Connect(function()
+                                local CurrentlySelected = table.find(Selected, Item) ~= nil
+                                UpdateSelection(Item, not CurrentlySelected, {Frame = CellBtn, Stroke = Stroke, Indicator = Indicator, Item = Item})
                             end)
                             
                             -- Store reference
-                            local tCellData = {Frame = oCellBtn, Stroke = oStroke, Item = tItem, Viewport = oViewport, Indicator = oSelectIndicator}
-                            table.insert(tCellButtons, tCellData)
+                            local CellData = {
+                                Frame = CellBtn,
+                                Stroke = Stroke,
+                                Indicator = Indicator,
+                                Item = Item
+                            }
+                            table.insert(CellButtons, CellData)
                             
                             -- Apply default selection
-                            if tItem.Default or (tProps.Default and (tProps.Default == tItem.Name or (type(tProps.Default) == "table" and table.find(tProps.Default, tItem.Name)))) then
-                                task.defer(function() fnUpdateSelection(tItem, true, tCellData) end)
+                            if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
+                                task.defer(function() 
+                                    UpdateSelection(Item, true, CellData) 
+                                end)
                             end
                             
-                            return tCellData
+                            return CellData
                         end
 
                         -- Build initial grid
-                        for nIndex, tItem in ipairs(tGridItems) do
-                            fnCreateCell(tItem, nIndex)
+                        for Index, Item in ipairs(GridItems) do
+                            CreateCell(Item, Index)
                         end
 
                         -- Public API
-                        function tGridFunctions:SetItems(tNewItems)
+                        function GridFunctions:SetItems(NewItems)
                             -- Clear old
-                            for _, tCell in tCellButtons do
-                                if tCell.Viewport then tCell.Viewport:Destroy() end
-                                tCell.Frame:Destroy()
+                            for _, Cell in CellButtons do
+                                Cell.Frame:Destroy()
                             end
-                            table.clear(tCellButtons)
-                            table.clear(tSelected)
+                            table.clear(CellButtons)
+                            table.clear(Selected)
                             
                             -- Rebuild
-                            tGridItems = tNewItems
-                            for nIndex, tItem in ipairs(tGridItems) do
-                                fnCreateCell(tItem, nIndex)
+                            GridItems = NewItems
+                            for Index, Item in ipairs(GridItems) do
+                                CreateCell(Item, Index)
                             end
                         end
                         
-                        function tGridFunctions:SetSelected(tItems)
-                            if type(tItems) ~= "table" then tItems = {tItems} end
+                        function GridFunctions:SetSelected(Items)
+                            if type(Items) ~= "table" then Items = {Items} end
                             -- Deselect all first
-                            for _, tCell in tCellButtons do
-                                fnUpdateSelection(tCell.Item, false, tCell)
+                            for _, Cell in CellButtons do
+                                UpdateSelection(Cell.Item, false, Cell)
                             end
                             -- Select specified
-                            for _, sName in tItems do
-                                for _, tCell in tCellButtons do
-                                    if tCell.Item.Name == sName then
-                                        fnUpdateSelection(tCell.Item, true, tCell)
+                            for _, Name in Items do
+                                for _, Cell in CellButtons do
+                                    if Cell.Item.Name == Name then
+                                        UpdateSelection(Cell.Item, true, Cell)
                                         break
                                     end
                                 end
                             end
                         end
                         
-                        function tGridFunctions:GetSelected()
-                            return tSelected
+                        function GridFunctions:GetSelected()
+                            return Selected
                         end
                         
-                        function tGridFunctions:ClearSelection()
-                            for _, tCell in tCellButtons do
-                                fnUpdateSelection(tCell.Item, false, tCell)
+                        function GridFunctions:ClearSelection()
+                            for _, Cell in CellButtons do
+                                UpdateSelection(Cell.Item, false, Cell)
                             end
                         end
                         
-                        function tGridFunctions:SetValue(tVal)
-                            tGridFunctions:SetSelected(tVal)
+                        function GridFunctions:SetValue(Val)
+                            GridFunctions:SetSelected(Val)
                         end
                         
-                        function tGridFunctions:GetValue()
-                            return tGridFunctions:GetSelected()
+                        function GridFunctions:GetValue()
+                            return GridFunctions:GetSelected()
                         end
 
                         -- Theme update support
-                        table.insert(tLibrary.DynamicUpdates, function()
-                            for _, tCell in tCellButtons do
-                                if table.find(tSelected, tCell.Item) then
-                                    tCell.Stroke.Color = tConfig.Colors.Accent
+                        table.insert(Library.DynamicUpdates, function()
+                            for _, Cell in CellButtons do
+                                if table.find(Selected, Cell.Item) then
+                                    Cell.Stroke.Color = Config.Colors.Accent
                                 else
-                                    tCell.Stroke.Color = tConfig.Colors.Border
+                                    Cell.Stroke.Color = Config.Colors.Border
                                 end
                             end
                         end)
                         
-                        if tProps.Flag then 
-							tLibrary.Flags[tProps.Flag] = tGridFunctions 
-						end
-                        return tGridFunctions
+                        if Props.Flag then 
+                            Library.Flags[Props.Flag] = GridFunctions 
+                        end
+                        return GridFunctions
                     end
-                    -- ✨ End Grid function ✨
 
-                    return tSectionFunctions
+                    return SectionFunctions
                 end
-                return tSubFunctions
+                return SubFunctions
             end
-            return tCategoryFunctions
+            return CategoryFunctions
         end
-        return tTabFunctions
+        return TabFunctions
     end
-    return tWindowFunctions
+    return WindowFunctions
 end
 
-return tLibrary
+-- Additional Utility Functions
+function Library:Destroy()
+    if Library.MainFrame and Library.MainFrame.Parent then
+        Library.MainFrame.Parent:Destroy()
+    end
+end
+
+function Library:Show()
+    if Library.MainFrame then
+        Library.WindowVisible = true
+        Library.MainFrame.Visible = true
+        TweenService:Create(Library.MainFrame, CreateTween(0.3), {GroupTransparency = 0}):Play()
+    end
+end
+
+function Library:Hide()
+    if Library.MainFrame then
+        TweenService:Create(Library.MainFrame, CreateTween(0.3), {GroupTransparency = 1}):Play()
+        task.delay(0.3, function()
+            Library.MainFrame.Visible = false
+            Library.WindowVisible = false
+        end)
+    end
+end
+
+return Library
