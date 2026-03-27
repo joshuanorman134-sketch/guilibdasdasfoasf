@@ -18,9 +18,10 @@ Library.MainFrame = nil
 Library.Notifications = {}
 Library.ConfigEnabled = false
 Library.ConfigName = "SeraphConfig"
-Library.NotificationQueue = {} -- ADDED: For notification deduplication
+Library.NotificationQueue = {}
+Library.Scale = 1 -- Global scale factor
 
--- Configuration
+-- Configuration - More compact defaults
 local Config = { 
     Colors = { 
         MainBg = Color3.fromRGB(17, 17, 22), 
@@ -37,7 +38,7 @@ local Config = {
         Warning = Color3.fromRGB(255, 193, 7)
     }, 
     Font = Font.new("rbxassetid://12187371840", Enum.FontWeight.Regular, Enum.FontStyle.Normal), 
-    TextSize = 13, 
+    TextSize = 12, -- Reduced from 13
     ChevronImage = "rbxassetid://10709790948", 
     PickerCursor = "rbxassetid://10709798174",
     CloseIcon = "rbxassetid://10709790948"
@@ -60,6 +61,11 @@ local function CreateInstance(Class, Properties, ThemeProps)
         end 
     end
     return Inst
+end
+
+-- Scaling utility
+local function Scale(Value)
+    return math.floor(Value * Library.Scale)
 end
 
 local function GetBindText(Bind)
@@ -157,7 +163,7 @@ end
 function Library:Confirm(Title, Message, Callback)
     local Dialog = CreateInstance("Frame", {
         Parent = Library.MainFrame,
-        Size = UDim2.new(0, 300, 0, 150),
+        Size = UDim2.new(0, Scale(280), 0, Scale(130)),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 0,
@@ -165,7 +171,7 @@ function Library:Confirm(Title, Message, Callback)
         ZIndex = 10000
     }, {BackgroundColor3 = "PanelBg"})
     
-    CreateInstance("UICorner", {Parent = Dialog, CornerRadius = UDim.new(0, 8)})
+    CreateInstance("UICorner", {Parent = Dialog, CornerRadius = UDim.new(0, Scale(6))})
     CreateInstance("UIStroke", {Parent = Dialog, Thickness = 1}, {Color = "Accent"})
     
     local Backdrop = CreateInstance("Frame", {
@@ -180,11 +186,11 @@ function Library:Confirm(Title, Message, Callback)
     CreateInstance("TextLabel", {
         Parent = Dialog,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 30),
-        Position = UDim2.new(0, 0, 0, 10),
+        Size = UDim2.new(1, 0, 0, Scale(26)),
+        Position = UDim2.new(0, 0, 0, Scale(8)),
         FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold),
         Text = Title or "Confirm",
-        TextSize = 16,
+        TextSize = Scale(14),
         TextColor3 = Config.Colors.TextLight,
         ZIndex = 10001
     })
@@ -192,11 +198,11 @@ function Library:Confirm(Title, Message, Callback)
     CreateInstance("TextLabel", {
         Parent = Dialog,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, -20, 0, 50),
-        Position = UDim2.new(0, 10, 0, 45),
+        Size = UDim2.new(1, Scale(-16), 0, Scale(40)),
+        Position = UDim2.new(0, Scale(8), 0, Scale(36)),
         FontFace = Config.Font,
         Text = Message or "Are you sure?",
-        TextSize = 13,
+        TextSize = Scale(11),
         TextColor3 = Config.Colors.TextMain,
         TextWrapped = true,
         ZIndex = 10001
@@ -205,8 +211,8 @@ function Library:Confirm(Title, Message, Callback)
     local ButtonFrame = CreateInstance("Frame", {
         Parent = Dialog,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, -20, 0, 35),
-        Position = UDim2.new(0, 10, 1, -45),
+        Size = UDim2.new(1, Scale(-16), 0, Scale(30)),
+        Position = UDim2.new(0, Scale(8), 1, Scale(-38)),
         ZIndex = 10001
     })
     
@@ -214,22 +220,22 @@ function Library:Confirm(Title, Message, Callback)
         Parent = ButtonFrame,
         FillDirection = Enum.FillDirection.Horizontal,
         HorizontalAlignment = Enum.HorizontalAlignment.Center,
-        Padding = UDim.new(0, 10)
+        Padding = UDim.new(0, Scale(8))
     })
     
     local function CreateBtn(Text, Color, Result)
         local Btn = CreateInstance("TextButton", {
             Parent = ButtonFrame,
-            Size = UDim2.new(0.5, -5, 1, 0),
+            Size = UDim2.new(0.5, Scale(-4), 1, 0),
             BackgroundColor3 = Color,
             BorderSizePixel = 0,
             Text = Text,
             FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold),
-            TextSize = 13,
+            TextSize = Scale(12),
             TextColor3 = Config.Colors.TextLight,
             ZIndex = 10002
         })
-        CreateInstance("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, 6)})
+        CreateInstance("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, Scale(5))})
         
         Btn.MouseEnter:Connect(function()
             TweenService:Create(Btn, CreateTween(0.2), {BackgroundColor3 = Color:Lerp(Config.Colors.TextLight, 0.2)}):Play()
@@ -260,8 +266,8 @@ function Library:Notify(Message, Duration, Type)
     local NotificationGui = CreateInstance("Frame", {
         Name = "Notification",
         Parent = Library.MainFrame and Library.MainFrame.Parent or game.CoreGui,
-        Size = UDim2.new(0, 300, 0, 60),
-        Position = UDim2.new(0.5, 0, 0, 100),
+        Size = UDim2.new(0, Scale(260), 0, Scale(50)),
+        Position = UDim2.new(0.5, 0, 0, Scale(80)),
         AnchorPoint = Vector2.new(0.5, 0),
         BackgroundTransparency = 0.05,
         BorderSizePixel = 0,
@@ -269,7 +275,7 @@ function Library:Notify(Message, Duration, Type)
         Visible = false
     }, {BackgroundColor3 = "PanelBg"})
     
-    CreateInstance("UICorner", {Parent = NotificationGui, CornerRadius = UDim.new(0, 6)})
+    CreateInstance("UICorner", {Parent = NotificationGui, CornerRadius = UDim.new(0, Scale(5))})
     CreateInstance("UIStroke", {Parent = NotificationGui, Thickness = 1}, {Color = "Border"})
     
     local ColorMap = {
@@ -281,17 +287,17 @@ function Library:Notify(Message, Duration, Type)
     
     CreateInstance("Frame", {
         Parent = NotificationGui,
-        Size = UDim2.new(0, 4, 1, 0),
+        Size = UDim2.new(0, Scale(3), 1, 0),
         BorderSizePixel = 0
     }, {BackgroundColor3 = ColorMap[Type] or "Accent"})
     
     CreateInstance("TextLabel", {
         Parent = NotificationGui,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, -20, 1, 0),
-        Position = UDim2.new(0, 15, 0, 0),
+        Size = UDim2.new(1, Scale(-16), 1, 0),
+        Position = UDim2.new(0, Scale(12), 0, 0),
         FontFace = Config.Font,
-        TextSize = 12,
+        TextSize = Scale(11),
         Text = Message,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
@@ -301,11 +307,11 @@ function Library:Notify(Message, Duration, Type)
     table.insert(Library.Notifications, NotificationGui)
     
     NotificationGui.Visible = true
-    local InTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, 20)})
+    local InTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, Scale(15))})
     InTween:Play()
     
     task.delay(Duration, function()
-        local OutTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, -100), BackgroundTransparency = 1})
+        local OutTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, Scale(-80)), BackgroundTransparency = 1})
         OutTween:Play()
         OutTween.Completed:Wait()
         NotificationGui:Destroy()
@@ -350,6 +356,10 @@ end
 
 function Library:SetAnimationSpeed(NewSpeed)
     Library.AnimationSpeed = NewSpeed
+end
+
+function Library:SetScale(NewScale)
+    Library.Scale = NewScale
 end
 
 function Library:SetWindowKeybind(KeyCode)
@@ -410,8 +420,10 @@ UserInputService.InputBegan:Connect(function(Input, Processed)
     end
 end)
 
--- Main Window Function
-function Library:Window(TitleOrIcon)
+-- Main Window Function - COMPACT VERSION
+function Library:Window(TitleOrIcon, WindowScale)
+    Library.Scale = WindowScale or 1 -- Set global scale
+    
     local ScreenGui = CreateInstance("ScreenGui", {
         Name = "Seraph",
         Parent = game.CoreGui,
@@ -420,26 +432,33 @@ function Library:Window(TitleOrIcon)
         IgnoreGuiInset = true
     })
     
+    -- Smaller default size
     local MainFrame = CreateInstance("CanvasGroup", {
         Name = "MainFrame",
         Parent = ScreenGui,
         BorderSizePixel = 0,
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(0.5, 0, 0.5, 0),
-        Size = UDim2.new(0.9, 0, 0.9, 0),
+        Size = UDim2.new(0, Scale(750), 0, Scale(500)), -- Reduced from 900x650
         GroupTransparency = 0
     }, {BackgroundColor3 = "PanelBg"})
     
-    local SizeConstraint = CreateInstance("UISizeConstraint", {Parent = MainFrame, MaxSize = Vector2.new(900, 650), MinSize = Vector2.new(400, 300)})
+    local SizeConstraint = CreateInstance("UISizeConstraint", {
+        Parent = MainFrame, 
+        MaxSize = Vector2.new(Scale(900), Scale(650)), 
+        MinSize = Vector2.new(Scale(350), Scale(250)) -- Reduced min size
+    })
+    
     Library.MainFrame = MainFrame
-    CreateInstance("UICorner", {Parent = MainFrame, CornerRadius = UDim.new(0, 8)})
+    CreateInstance("UICorner", {Parent = MainFrame, CornerRadius = UDim.new(0, Scale(6))})
     local MainStroke = CreateInstance("UIStroke", {Parent = MainFrame, Thickness = 1, Name = "UIStroke"}, {Color = "MainBg"})
 
+    -- Compact TopBar (40px instead of 48px)
     local TopBar = CreateInstance("Frame", {
         Name = "TopBar",
         Parent = MainFrame,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 48)
+        Size = UDim2.new(1, 0, 0, Scale(40))
     }, {BackgroundColor3 = "MainBg"})
     
     MakeDraggable(TopBar, MainFrame)
@@ -448,9 +467,9 @@ function Library:Window(TitleOrIcon)
         CreateInstance("ImageLabel", {
             Parent = TopBar,
             BackgroundTransparency = 1,
-            Size = UDim2.new(0, 32, 0, 32),
+            Size = UDim2.new(0, Scale(26), 0, Scale(26)),
             AnchorPoint = Vector2.new(0, 0.5),
-            Position = UDim2.new(0, 15, 0.5, 0),
+            Position = UDim2.new(0, Scale(12), 0.5, 0),
             Image = TitleOrIcon,
             ScaleType = Enum.ScaleType.Fit
         }, {ImageColor3 = "Accent"})
@@ -458,46 +477,47 @@ function Library:Window(TitleOrIcon)
         CreateInstance("TextLabel", {
             Parent = TopBar,
             BackgroundTransparency = 1,
-            Position = UDim2.new(0, 20, 0, 0),
-            Size = UDim2.new(0, 200, 1, 0),
+            Position = UDim2.new(0, Scale(16), 0, 0),
+            Size = UDim2.new(0, Scale(200), 1, 0),
             FontFace = Config.Font,
             Text = tostring(TitleOrIcon or "Library"),
-            TextSize = 20,
+            TextSize = Scale(16),
             TextXAlignment = Enum.TextXAlignment.Left
         }, {TextColor3 = "Accent"})
     end
     
+    -- Compact buttons (28px instead of 36px)
     local MinimizeButton = CreateInstance("TextButton", {
         Parent = TopBar,
         BackgroundTransparency = 1,
-        Size = UDim2.new(0, 36, 0, 36),
-        Position = UDim2.new(1, -87, 0, 6),
+        Size = UDim2.new(0, Scale(28), 0, Scale(28)),
+        Position = UDim2.new(1, Scale(-72), 0, Scale(6)),
         Text = "−",
         FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
-        TextSize = 24,
+        TextSize = Scale(20),
         AutoButtonColor = false
     }, {TextColor3 = "TextMain"})
     
-    CreateInstance("UICorner", {Parent = MinimizeButton, CornerRadius = UDim.new(0, 6)})
+    CreateInstance("UICorner", {Parent = MinimizeButton, CornerRadius = UDim.new(0, Scale(5))})
     
     local CloseButton = CreateInstance("TextButton", {
         Parent = TopBar,
         BackgroundTransparency = 1,
-        Size = UDim2.new(0, 36, 0, 36),
-        Position = UDim2.new(1, -46, 0, 6),
+        Size = UDim2.new(0, Scale(28), 0, Scale(28)),
+        Position = UDim2.new(1, Scale(-38), 0, Scale(6)),
         Text = "X",
         FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
-        TextSize = 18,
+        TextSize = Scale(14),
         AutoButtonColor = false
     }, {TextColor3 = "TextMain"})
     
-    CreateInstance("UICorner", {Parent = CloseButton, CornerRadius = UDim.new(0, 6)})
+    CreateInstance("UICorner", {Parent = CloseButton, CornerRadius = UDim.new(0, Scale(5))})
     
     local Body = CreateInstance("Frame", {
         Parent = MainFrame,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 0, 0, 48),
-        Size = UDim2.new(1, 0, 1, -48),
+        Position = UDim2.new(0, 0, 0, Scale(40)),
+        Size = UDim2.new(1, 0, 1, Scale(-40)),
         Name = "Body"
     })
     
@@ -534,19 +554,17 @@ function Library:Window(TitleOrIcon)
         IsMinimized = not IsMinimized
         if IsMinimized then
             PreMinimizeSize = MainFrame.Size
-            SizeConstraint.MinSize = Vector2.new(400, 48)
+            SizeConstraint.MinSize = Vector2.new(Scale(350), Scale(40))
             Body.Visible = false
             
-            local minimizedHeight = 48
-            TweenService:Create(MainFrame, CreateTween(0.2), {Size = UDim2.new(PreMinimizeSize.X.Scale, PreMinimizeSize.X.Offset, 0, minimizedHeight)}):Play()
-            
+            TweenService:Create(MainFrame, CreateTween(0.2), {Size = UDim2.new(PreMinimizeSize.X.Scale, PreMinimizeSize.X.Offset, 0, Scale(40))}):Play()
             MinimizeButton.Text = "+"
         else
             Body.Visible = true
-            TweenService:Create(MainFrame, CreateTween(0.2), {Size = PreMinimizeSize or UDim2.new(0.9, 0, 0.9, 0)}):Play()
+            TweenService:Create(MainFrame, CreateTween(0.2), {Size = PreMinimizeSize or UDim2.new(0, Scale(750), 0, Scale(500))}):Play()
             
             task.delay(0.2, function()
-                SizeConstraint.MinSize = Vector2.new(400, 300)
+                SizeConstraint.MinSize = Vector2.new(Scale(350), Scale(250))
             end)
             
             task.delay(0.25, function()
@@ -576,11 +594,12 @@ function Library:Window(TitleOrIcon)
         MainStroke.Transparency = 0
     end)
 
+    -- Compact TabContainer
     local TabContainer = CreateInstance("Frame", {
         Parent = TopBar,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 120, 0, 0),
-        Size = UDim2.new(1, -200, 1, 0)
+        Position = UDim2.new(0, Scale(100), 0, 0),
+        Size = UDim2.new(1, Scale(-160), 1, 0)
     })
     
     CreateInstance("UIListLayout", {
@@ -588,72 +607,74 @@ function Library:Window(TitleOrIcon)
         FillDirection = Enum.FillDirection.Horizontal,
         HorizontalAlignment = Enum.HorizontalAlignment.Right,
         VerticalAlignment = Enum.VerticalAlignment.Center,
-        Padding = UDim.new(0, 5)
+        Padding = UDim.new(0, Scale(4))
     })
 
+    -- Narrower Sidebar (120px instead of 150px)
     local SidebarArea = CreateInstance("Frame", {
         Parent = Body,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 15, 0, 15),
-        Size = UDim2.new(0, 150, 1, -30)
+        Position = UDim2.new(0, Scale(10), 0, Scale(10)),
+        Size = UDim2.new(0, Scale(120), 1, Scale(-20))
     })
     
     CreateInstance("TextLabel", {
         Parent = SidebarArea,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 20),
+        Size = UDim2.new(1, 0, 0, Scale(16)),
         FontFace = Config.Font,
         Text = "CATEGORIES",
-        TextSize = 11,
+        TextSize = Scale(10),
         TextXAlignment = Enum.TextXAlignment.Left
     }, {TextColor3 = "TextMain"})
     
     local SidebarList = CreateInstance("ScrollingFrame", {
         Parent = SidebarArea,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 0, 0, 25),
-        Size = UDim2.new(1, 0, 1, -25),
+        Position = UDim2.new(0, 0, 0, Scale(20)),
+        Size = UDim2.new(1, 0, 1, Scale(-20)),
         ScrollBarThickness = 0,
         CanvasSize = UDim2.new(0,0,0,0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y
     })
     
-    CreateInstance("UIListLayout", {Parent = SidebarList, Padding = UDim.new(0, 10)})
+    CreateInstance("UIListLayout", {Parent = SidebarList, Padding = UDim.new(0, Scale(6))})
 
+    -- Tighter Content Area
     local ContentArea = CreateInstance("Frame", {
         Parent = Body,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 175, 0, 15),
-        Size = UDim2.new(1, -190, 1, -30)
+        Position = UDim2.new(0, Scale(140), 0, Scale(10)),
+        Size = UDim2.new(1, Scale(-155), 1, Scale(-20))
     })
     
     CreateInstance("TextLabel", {
         Parent = ContentArea,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, 0, 0, 20),
+        Size = UDim2.new(1, 0, 0, Scale(16)),
         FontFace = Config.Font,
         Text = "FEATURES",
-        TextSize = 11,
+        TextSize = Scale(10),
         TextXAlignment = Enum.TextXAlignment.Left
     }, {TextColor3 = "TextMain"})
     
     local SectionContainer = CreateInstance("ScrollingFrame", {
         Parent = ContentArea,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, 0, 0, 25),
-        Size = UDim2.new(1, 0, 1, -25),
-        ScrollBarThickness = 3,
+        Position = UDim2.new(0, 0, 0, Scale(20)),
+        Size = UDim2.new(1, 0, 1, Scale(-20)),
+        ScrollBarThickness = 2,
         CanvasSize = UDim2.new(0,0,0,0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y
     }, {ScrollBarImageColor3 = "Border"})
     
-    CreateInstance("UIListLayout", {Parent = SectionContainer, Padding = UDim.new(0, 10)})
+    CreateInstance("UIListLayout", {Parent = SectionContainer, Padding = UDim.new(0, Scale(6))})
 
     local ContentFadeOverlay = CreateInstance("Frame", {
         Parent = ContentArea,
         Name = "ContentFadeOverlay",
-        Size = UDim2.new(1, 0, 1, -25),
-        Position = UDim2.new(0, 0, 0, 25),
+        Size = UDim2.new(1, 0, 1, Scale(-20)),
+        Position = UDim2.new(0, 0, 0, Scale(20)),
         ZIndex = 1000,
         BackgroundTransparency = 1,
         Visible = false,
@@ -677,20 +698,21 @@ function Library:Window(TitleOrIcon)
     local IsAnimatingTab = false
 
     function WindowFunctions:AddTab(IconAsset)
+        -- Smaller tab buttons (28px instead of 32px)
         local TabButton = CreateInstance("ImageButton", {
             Parent = TabContainer,
             BackgroundTransparency = 1,
-            Size = UDim2.new(0, 32, 0, 32),
+            Size = UDim2.new(0, Scale(28), 0, Scale(28)),
             Image = "",
             AutoButtonColor = false
         }, {BackgroundColor3 = "PanelBg"})
         
-        CreateInstance("UICorner", {Parent = TabButton, CornerRadius = UDim.new(0, 6)})
+        CreateInstance("UICorner", {Parent = TabButton, CornerRadius = UDim.new(0, Scale(5))})
         
         local IconImg = CreateInstance("ImageLabel", {
             Parent = TabButton,
             BackgroundTransparency = 1,
-            Size = UDim2.new(0, 20, 0, 20),
+            Size = UDim2.new(0, Scale(18), 0, Scale(18)),
             Position = UDim2.new(0.5, 0, 0.5, 0),
             AnchorPoint = Vector2.new(0.5, 0.5),
             Image = IconAsset[1] or "rbxassetid://10734962600"
@@ -773,6 +795,7 @@ function Library:Window(TitleOrIcon)
         end
 
         function TabFunctions:AddCategory(CatName)
+            -- More compact category frame
             local CategoryFrame = CreateInstance("Frame", {
                 Parent = SidebarList,
                 Size = UDim2.new(1, 0, 0, 0),
@@ -781,17 +804,18 @@ function Library:Window(TitleOrIcon)
                 BorderSizePixel = 0
             }, {BackgroundColor3 = "SectionBg"})
             
-            CreateInstance("UICorner", {Parent = CategoryFrame, CornerRadius = UDim.new(0, 6)})
+            CreateInstance("UICorner", {Parent = CategoryFrame, CornerRadius = UDim.new(0, Scale(5))})
             CreateInstance("UIStroke", {Parent = CategoryFrame, Thickness = 1}, {Color = "Border"})
             table.insert(Categories, CategoryFrame)
 
+            -- Compact header (28px instead of 32px)
             local CatHeader = CreateInstance("TextButton", {
                 Parent = CategoryFrame,
                 BackgroundTransparency = 1,
-                Size = UDim2.new(1, 0, 0, 32),
+                Size = UDim2.new(1, 0, 0, Scale(28)),
                 FontFace = Config.Font,
                 Text = "  " .. CatName,
-                TextSize = 12,
+                TextSize = Scale(11),
                 TextXAlignment = Enum.TextXAlignment.Left,
                 AutoButtonColor = false
             }, {TextColor3 = "TextLight"})
@@ -799,8 +823,8 @@ function Library:Window(TitleOrIcon)
             local CatIcon = CreateInstance("ImageLabel", {
                 Parent = CatHeader,
                 BackgroundTransparency = 1,
-                Size = UDim2.new(0, 16, 0, 16),
-                Position = UDim2.new(1, -22, 0.5, -8),
+                Size = UDim2.new(0, Scale(14), 0, Scale(14)),
+                Position = UDim2.new(1, Scale(-20), 0.5, Scale(-7)),
                 Image = Config.ChevronImage,
                 Rotation = 0
             }, {ImageColor3 = "TextMain"})
@@ -808,19 +832,19 @@ function Library:Window(TitleOrIcon)
             local SubCatContainer = CreateInstance("Frame", {
                 Parent = CategoryFrame,
                 BackgroundTransparency = 1,
-                Position = UDim2.new(0, 0, 0, 32),
+                Position = UDim2.new(0, 0, 0, Scale(28)),
                 Size = UDim2.new(1, 0, 0, 0),
                 AutomaticSize = Enum.AutomaticSize.Y,
                 ClipsDescendants = true,
                 Visible = true
             })
             
-            CreateInstance("UIListLayout", {Parent = SubCatContainer, Padding = UDim.new(0, 2)})
+            CreateInstance("UIListLayout", {Parent = SubCatContainer, Padding = UDim.new(0, Scale(2))})
             CreateInstance("UIPadding", {
                 Parent = SubCatContainer,
-                PaddingBottom = UDim.new(0, 6),
-                PaddingLeft = UDim.new(0, 6),
-                PaddingRight = UDim.new(0, 6)
+                PaddingBottom = UDim.new(0, Scale(4)),
+                PaddingLeft = UDim.new(0, Scale(4)),
+                PaddingRight = UDim.new(0, Scale(4))
             })
 
             local CatOpen = true
@@ -833,23 +857,24 @@ function Library:Window(TitleOrIcon)
             local CategoryFunctions = {}
 
             function CategoryFunctions:AddSubCategory(SubCatName)
+                -- More compact subcategory button (24px instead of 28px)
                 local SubButton = CreateInstance("TextButton", {
                     Parent = SubCatContainer,
                     BackgroundTransparency = 1,
-                    Size = UDim2.new(1, 0, 0, 28),
+                    Size = UDim2.new(1, 0, 0, Scale(24)),
                     FontFace = Config.Font,
                     Text = "  " .. SubCatName,
-                    TextSize = 12,
+                    TextSize = Scale(11),
                     TextXAlignment = Enum.TextXAlignment.Left,
                     AutoButtonColor = false
                 }, {TextColor3 = "TextMain"})
                 
-                CreateInstance("UICorner", {Parent = SubButton, CornerRadius = UDim.new(0, 4)})
+                CreateInstance("UICorner", {Parent = SubButton, CornerRadius = UDim.new(0, Scale(3))})
                 
                 local ActiveBorder = CreateInstance("Frame", {
                     Parent = SubButton,
                     BorderSizePixel = 0,
-                    Size = UDim2.new(0, 3, 1, 0),
+                    Size = UDim2.new(0, Scale(2), 1, 0),
                     Visible = false
                 }, {BackgroundColor3 = "Accent"})
 
@@ -941,6 +966,7 @@ function Library:Window(TitleOrIcon)
                 end
 
                 function SubFunctions:AddSection(SectionName)
+                    -- Compact section frame
                     local SectionFrame = CreateInstance("Frame", {
                         Parent = SectionContainer,
                         Size = UDim2.new(1, 0, 0, 0),
@@ -949,7 +975,7 @@ function Library:Window(TitleOrIcon)
                         BorderSizePixel = 0
                     }, {BackgroundColor3 = "SectionBg"})
                     
-                    CreateInstance("UICorner", {Parent = SectionFrame, CornerRadius = UDim.new(0, 6)})
+                    CreateInstance("UICorner", {Parent = SectionFrame, CornerRadius = UDim.new(0, Scale(5))})
                     CreateInstance("UIStroke", {Parent = SectionFrame, Thickness = 1}, {Color = "Border"})
                     table.insert(AssociatedSections, SectionFrame)
                     
@@ -957,11 +983,11 @@ function Library:Window(TitleOrIcon)
                         SectionFrame.Visible = true 
                     end
 
-                    -- Header with search capability
+                    -- Compact header (28px)
                     local HeaderContainer = CreateInstance("Frame", {
                         Parent = SectionFrame,
                         BackgroundTransparency = 1,
-                        Size = UDim2.new(1, 0, 0, 32),
+                        Size = UDim2.new(1, 0, 0, Scale(28)),
                         BorderSizePixel = 0
                     })
                     
@@ -971,7 +997,7 @@ function Library:Window(TitleOrIcon)
                         Size = UDim2.new(1, 0, 1, 0),
                         Text = "  " .. SectionName,
                         FontFace = Config.Font,
-                        TextSize = 12,
+                        TextSize = Scale(11),
                         TextXAlignment = Enum.TextXAlignment.Left,
                         AutoButtonColor = false
                     }, {TextColor3 = "TextMain"})
@@ -979,8 +1005,8 @@ function Library:Window(TitleOrIcon)
                     local SecIcon = CreateInstance("ImageLabel", {
                         Parent = HeaderBtn,
                         BackgroundTransparency = 1,
-                        Size = UDim2.new(0, 16, 0, 16),
-                        Position = UDim2.new(1, -22, 0.5, -8),
+                        Size = UDim2.new(0, Scale(14), 0, Scale(14)),
+                        Position = UDim2.new(1, Scale(-20), 0.5, Scale(-7)),
                         Image = Config.ChevronImage,
                         Rotation = 0
                     }, {ImageColor3 = "TextMain"}) 
@@ -988,25 +1014,26 @@ function Library:Window(TitleOrIcon)
                     CreateInstance("Frame", {
                         Parent = SectionFrame,
                         BorderSizePixel = 0,
-                        Position = UDim2.new(0,0,0,32),
+                        Position = UDim2.new(0,0,0,Scale(28)),
                         Size = UDim2.new(1, 0, 0, 1)
                     }, {BackgroundColor3 = "Separator"})
 
+                    -- Tighter elements container
                     local ElementsContainer = CreateInstance("Frame", {
                         Parent = SectionFrame,
                         BackgroundTransparency = 1,
-                        Position = UDim2.new(0, 0, 0, 37),
+                        Position = UDim2.new(0, 0, 0, Scale(32)),
                         Size = UDim2.new(1, 0, 0, 0),
                         AutomaticSize = Enum.AutomaticSize.Y,
                         ClipsDescendants = false
                     })
                     
-                    CreateInstance("UIListLayout", {Parent = ElementsContainer, Padding = UDim.new(0, 8)})
+                    CreateInstance("UIListLayout", {Parent = ElementsContainer, Padding = UDim.new(0, Scale(6))})
                     CreateInstance("UIPadding", {
                         Parent = SectionFrame,
-                        PaddingBottom = UDim.new(0, 10),
-                        PaddingLeft = UDim.new(0, 10),
-                        PaddingRight = UDim.new(0, 10)
+                        PaddingBottom = UDim.new(0, Scale(8)),
+                        PaddingLeft = UDim.new(0, Scale(8)),
+                        PaddingRight = UDim.new(0, Scale(8))
                     })
 
                     local SecOpen = true
@@ -1018,21 +1045,20 @@ function Library:Window(TitleOrIcon)
 
                     local SectionFunctions = {}
                     local SearchBox = nil
-                    local SearchFunction = nil
 
-                    -- BUTTON
+                    -- BUTTON - Compact
                     function SectionFunctions:Button(Props)
                         local ButtonFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 30)
+                            Size = UDim2.new(1, 0, 0, Scale(26))
                         })
                         
                         CreateInstance("UIListLayout", {
                             Parent = ButtonFrame,
                             FillDirection = Enum.FillDirection.Horizontal,
                             VerticalAlignment = Enum.VerticalAlignment.Center,
-                            Padding = UDim.new(0, 5)
+                            Padding = UDim.new(0, Scale(4))
                         })
                         
                         local ButtonsInGroup = {}
@@ -1044,11 +1070,11 @@ function Library:Window(TitleOrIcon)
                                 BorderSizePixel = 0,
                                 FontFace = Config.Font,
                                 Text = BtnProps.Title,
-                                TextSize = 12,
+                                TextSize = Scale(11),
                                 AutoButtonColor = false
                             }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
                             
-                            CreateInstance("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, 5)})
+                            CreateInstance("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, Scale(4))})
                             local Stroke = CreateInstance("UIStroke", {Parent = Btn, Thickness = 1}, {Color = "Border"})
                             
                             Btn.MouseEnter:Connect(function() 
@@ -1073,7 +1099,7 @@ function Library:Window(TitleOrIcon)
 
                             table.insert(ButtonsInGroup, Btn)
 
-                            local TotalPadding = (#ButtonsInGroup - 1) * 5
+                            local TotalPadding = (#ButtonsInGroup - 1) * Scale(4)
                             local Offset = - (TotalPadding / #ButtonsInGroup)
                             
                             for _, B in ButtonsInGroup do
@@ -1105,12 +1131,12 @@ function Library:Window(TitleOrIcon)
                         return AddButton(Props)
                     end
 
-                    -- LABEL
+                    -- LABEL - Compact
                     function SectionFunctions:Label(Props)
                         local LabelFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 22)
+                            Size = UDim2.new(1, 0, 0, Scale(18))
                         })
                         
                         local Title = CreateInstance("TextLabel", {
@@ -1118,7 +1144,7 @@ function Library:Window(TitleOrIcon)
                             BackgroundTransparency = 1,
                             Text = Props.Title,
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             TextXAlignment = Enum.TextXAlignment.Left,
                             Size = UDim2.new(1, 0, 1, 0)
                         }, {TextColor3 = "TextMain"})
@@ -1131,12 +1157,12 @@ function Library:Window(TitleOrIcon)
                         return LabelFunctions
                     end
 
-                    -- TEXT INPUT
+                    -- TEXT INPUT - Compact
                     function SectionFunctions:Input(Props)
                         local InputFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 45)
+                            Size = UDim2.new(1, 0, 0, Scale(38))
                         })
                         
                         CreateInstance("TextLabel", {
@@ -1144,28 +1170,28 @@ function Library:Window(TitleOrIcon)
                             BackgroundTransparency = 1,
                             Text = Props.Title or "Input",
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             TextXAlignment = Enum.TextXAlignment.Left,
-                            Size = UDim2.new(1, 0, 0, 18)
+                            Size = UDim2.new(1, 0, 0, Scale(16))
                         }, {TextColor3 = "TextMain"})
                         
                         local BoxContainer = CreateInstance("Frame", {
                             Parent = InputFrame,
                             BorderSizePixel = 0,
-                            Position = UDim2.new(0, 0, 0, 20),
-                            Size = UDim2.new(1, 0, 0, 25)
+                            Position = UDim2.new(0, 0, 0, Scale(16)),
+                            Size = UDim2.new(1, 0, 0, Scale(22))
                         }, {BackgroundColor3 = "ElementBg"})
                         
-                        CreateInstance("UICorner", {Parent = BoxContainer, CornerRadius = UDim.new(0, 6)})
+                        CreateInstance("UICorner", {Parent = BoxContainer, CornerRadius = UDim.new(0, Scale(4))})
                         local BoxStroke = CreateInstance("UIStroke", {Parent = BoxContainer, Thickness = 1}, {Color = "Border"})
                         
                         local TextBox = CreateInstance("TextBox", {
                             Parent = BoxContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, -12, 1, 0),
-                            Position = UDim2.new(0, 6, 0, 0),
+                            Size = UDim2.new(1, Scale(-10), 1, 0),
+                            Position = UDim2.new(0, Scale(5), 0, 0),
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             Text = Props.Default or "",
                             PlaceholderText = Props.Placeholder or "Enter text...",
                             ClearTextOnFocus = false
@@ -1190,12 +1216,12 @@ function Library:Window(TitleOrIcon)
                         return InputFunctions
                     end
 
-                    -- DROPDOWN
+                    -- DROPDOWN - Compact
                     function SectionFunctions:Dropdown(Props)
                         local DropdownFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 45)
+                            Size = UDim2.new(1, 0, 0, Scale(38))
                         })
                         
                         CreateInstance("TextLabel", {
@@ -1203,31 +1229,31 @@ function Library:Window(TitleOrIcon)
                             BackgroundTransparency = 1,
                             Text = Props.Title or "Dropdown",
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             TextXAlignment = Enum.TextXAlignment.Left,
-                            Size = UDim2.new(1, 0, 0, 18)
+                            Size = UDim2.new(1, 0, 0, Scale(16))
                         }, {TextColor3 = "TextMain"})
                         
                         local DropdownBtn = CreateInstance("TextButton", {
                             Parent = DropdownFrame,
                             BorderSizePixel = 0,
-                            Position = UDim2.new(0, 0, 0, 20),
-                            Size = UDim2.new(1, 0, 0, 25),
+                            Position = UDim2.new(0, 0, 0, Scale(16)),
+                            Size = UDim2.new(1, 0, 0, Scale(22)),
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             Text = "  " .. (Props.Default or "Select..."),
                             TextXAlignment = Enum.TextXAlignment.Left,
                             AutoButtonColor = false
                         }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
                         
-                        CreateInstance("UICorner", {Parent = DropdownBtn, CornerRadius = UDim.new(0, 6)})
+                        CreateInstance("UICorner", {Parent = DropdownBtn, CornerRadius = UDim.new(0, Scale(4))})
                         local BtnStroke = CreateInstance("UIStroke", {Parent = DropdownBtn, Thickness = 1}, {Color = "Border"})
                         
                         local Arrow = CreateInstance("ImageLabel", {
                             Parent = DropdownBtn,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(0, 16, 0, 16),
-                            Position = UDim2.new(1, -22, 0.5, -8),
+                            Size = UDim2.new(0, Scale(14), 0, Scale(14)),
+                            Position = UDim2.new(1, Scale(-20), 0.5, Scale(-7)),
                             Image = Config.ChevronImage,
                             Rotation = 0
                         }, {ImageColor3 = "TextMain"})
@@ -1239,20 +1265,20 @@ function Library:Window(TitleOrIcon)
                         local OptionFrame = CreateInstance("Frame", {
                             Parent = DropdownFrame,
                             BorderSizePixel = 0,
-                            Position = UDim2.new(0, 0, 0, 48),
+                            Position = UDim2.new(0, 0, 0, Scale(40)),
                             Size = UDim2.new(1, 0, 0, 0),
                             Visible = false,
                             ZIndex = 100
                         }, {BackgroundColor3 = "ElementBg"})
                         
-                        CreateInstance("UICorner", {Parent = OptionFrame, CornerRadius = UDim.new(0, 6)})
+                        CreateInstance("UICorner", {Parent = OptionFrame, CornerRadius = UDim.new(0, Scale(4))})
                         CreateInstance("UIStroke", {Parent = OptionFrame, Thickness = 1}, {Color = "Border"})
                         
                         local OptionScroll = CreateInstance("ScrollingFrame", {
                             Parent = OptionFrame,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, -4, 1, -4),
-                            Position = UDim2.new(0, 2, 0, 2),
+                            Size = UDim2.new(1, Scale(-4), 1, Scale(-4)),
+                            Position = UDim2.new(0, Scale(2), 0, Scale(2)),
                             CanvasSize = UDim2.new(0, 0, 0, 0),
                             ScrollBarThickness = 2,
                             AutomaticCanvasSize = Enum.AutomaticSize.Y,
@@ -1261,7 +1287,7 @@ function Library:Window(TitleOrIcon)
                         
                         local OptionList = CreateInstance("UIListLayout", {
                             Parent = OptionScroll,
-                            Padding = UDim.new(0, 2)
+                            Padding = UDim.new(0, Scale(2))
                         })
                         
                         local function CloseMenu()
@@ -1279,7 +1305,7 @@ function Library:Window(TitleOrIcon)
                             OptionFrame.Visible = true
                             TweenService:Create(Arrow, CreateTween(0.2), {Rotation = 180}):Play()
                             
-                            local MaxHeight = math.min(#Options * 27 + 4, 150)
+                            local MaxHeight = math.min(#Options * Scale(24) + Scale(4), Scale(120))
                             TweenService:Create(OptionFrame, CreateTween(0.2), {Size = UDim2.new(1, 0, 0, MaxHeight)}):Play()
                             
                             Library.ActivePopup = {Element = OptionFrame, Close = CloseMenu}
@@ -1308,9 +1334,9 @@ function Library:Window(TitleOrIcon)
                                 local Btn = CreateInstance("TextButton", {
                                     Parent = OptionScroll,
                                     BorderSizePixel = 0,
-                                    Size = UDim2.new(1, 0, 0, 25),
+                                    Size = UDim2.new(1, 0, 0, Scale(22)),
                                     FontFace = Config.Font,
-                                    TextSize = 12,
+                                    TextSize = Scale(11),
                                     Text = "  " .. Option,
                                     TextXAlignment = Enum.TextXAlignment.Left,
                                     AutoButtonColor = false,
@@ -1350,12 +1376,12 @@ function Library:Window(TitleOrIcon)
                         return DropdownFunctions
                     end
 
-                    -- PROGRESS BAR
+                    -- PROGRESS BAR - Compact
                     function SectionFunctions:ProgressBar(Props)
                         local BarFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 35)
+                            Size = UDim2.new(1, 0, 0, Scale(30))
                         })
                         
                         local Title = CreateInstance("TextLabel", {
@@ -1363,9 +1389,9 @@ function Library:Window(TitleOrIcon)
                             BackgroundTransparency = 1,
                             Text = Props.Title or "Progress",
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             TextXAlignment = Enum.TextXAlignment.Left,
-                            Size = UDim2.new(1, 0, 0, 18)
+                            Size = UDim2.new(1, 0, 0, Scale(16))
                         }, {TextColor3 = "TextMain"})
                         
                         local PercentLabel = CreateInstance("TextLabel", {
@@ -1373,19 +1399,19 @@ function Library:Window(TitleOrIcon)
                             BackgroundTransparency = 1,
                             Text = "0%",
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             TextXAlignment = Enum.TextXAlignment.Right,
-                            Size = UDim2.new(1, 0, 0, 18)
+                            Size = UDim2.new(1, 0, 0, Scale(16))
                         }, {TextColor3 = "TextLight"})
                         
                         local BarBg = CreateInstance("Frame", {
                             Parent = BarFrame,
                             BorderSizePixel = 0,
-                            Position = UDim2.new(0, 0, 0, 20),
-                            Size = UDim2.new(1, 0, 0, 8)
+                            Position = UDim2.new(0, 0, 0, Scale(18)),
+                            Size = UDim2.new(1, 0, 0, Scale(6))
                         }, {BackgroundColor3 = "ElementBg"})
                         
-                        CreateInstance("UICorner", {Parent = BarBg, CornerRadius = UDim.new(0, 4)})
+                        CreateInstance("UICorner", {Parent = BarBg, CornerRadius = UDim.new(0, Scale(3))})
                         
                         local BarFill = CreateInstance("Frame", {
                             Parent = BarBg,
@@ -1393,7 +1419,7 @@ function Library:Window(TitleOrIcon)
                             Size = UDim2.new(0, 0, 1, 0)
                         }, {BackgroundColor3 = "Accent"})
                         
-                        CreateInstance("UICorner", {Parent = BarFill, CornerRadius = UDim.new(0, 4)})
+                        CreateInstance("UICorner", {Parent = BarFill, CornerRadius = UDim.new(0, Scale(3))})
                         
                         local ProgressFunctions = {}
                         function ProgressFunctions:SetValue(Percent)
@@ -1410,24 +1436,24 @@ function Library:Window(TitleOrIcon)
                         return ProgressFunctions
                     end
 
-                    -- TOGGLE
+                    -- TOGGLE - Compact
                     function SectionFunctions:Toggle(Props)
                         local ToggleFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 24)
+                            Size = UDim2.new(1, 0, 0, Scale(20))
                         })
                         
                         local Checkbox = CreateInstance("TextButton", {
                             Parent = ToggleFrame,
                             BorderSizePixel = 0,
-                            Size = UDim2.new(0, 16, 0, 16),
-                            Position = UDim2.new(0, 0, 0.5, -8),
+                            Size = UDim2.new(0, Scale(14), 0, Scale(14)),
+                            Position = UDim2.new(0, 0, 0.5, Scale(-7)),
                             Text = "",
                             AutoButtonColor = false
                         }, {BackgroundColor3 = "ElementBg"})
                         
-                        CreateInstance("UICorner", {Parent = Checkbox, CornerRadius = UDim.new(0, 4)})
+                        CreateInstance("UICorner", {Parent = Checkbox, CornerRadius = UDim.new(0, Scale(3))})
                         local CheckStroke = CreateInstance("UIStroke", {Parent = Checkbox, Color = Color3.fromRGB(50,50,50), Thickness = 1})
                         
                         local Title = CreateInstance("TextLabel", {
@@ -1435,10 +1461,10 @@ function Library:Window(TitleOrIcon)
                             BackgroundTransparency = 1,
                             Text = Props.Title,
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             TextXAlignment = Enum.TextXAlignment.Left,
-                            Position = UDim2.new(0, 24, 0, 0),
-                            Size = UDim2.new(1, -24, 1, 0)
+                            Position = UDim2.new(0, Scale(20), 0, 0),
+                            Size = UDim2.new(1, Scale(-20), 1, 0)
                         }, {TextColor3 = "TextMain"})
 
                         local Toggled = Props.Default or false
@@ -1473,12 +1499,12 @@ function Library:Window(TitleOrIcon)
                         return ToggleFunctions
                     end
 
-                    -- SLIDER
+                    -- SLIDER - Compact
                     function SectionFunctions:Slider(Props)
                         local SliderFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 45)
+                            Size = UDim2.new(1, 0, 0, Scale(38))
                         })
                         
                         CreateInstance("TextLabel", {
@@ -1486,9 +1512,9 @@ function Library:Window(TitleOrIcon)
                             BackgroundTransparency = 1,
                             Text = Props.Title,
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             TextXAlignment = Enum.TextXAlignment.Left,
-                            Size = UDim2.new(1, 0, 0, 18)
+                            Size = UDim2.new(1, 0, 0, Scale(16))
                         }, {TextColor3 = "TextMain"})
                         
                         local ValueLabel = CreateInstance("TextLabel", {
@@ -1496,21 +1522,21 @@ function Library:Window(TitleOrIcon)
                             BackgroundTransparency = 1,
                             Text = "",
                             FontFace = Config.Font,
-                            TextSize = 12,
+                            TextSize = Scale(11),
                             TextXAlignment = Enum.TextXAlignment.Right,
-                            Size = UDim2.new(1, 0, 0, 18)
+                            Size = UDim2.new(1, 0, 0, Scale(16))
                         }, {TextColor3 = "TextLight"})
                         
                         local SliderBg = CreateInstance("TextButton", {
                             Parent = SliderFrame,
                             BorderSizePixel = 0,
-                            Position = UDim2.new(0, 0, 0, 23),
-                            Size = UDim2.new(1, 0, 0, 5),
+                            Position = UDim2.new(0, 0, 0, Scale(20)),
+                            Size = UDim2.new(1, 0, 0, Scale(4)),
                             Text = "",
                             AutoButtonColor = false
                         }, {BackgroundColor3 = "ElementBg"})
                         
-                        CreateInstance("UICorner", {Parent = SliderBg, CornerRadius = UDim.new(0, 3)})
+                        CreateInstance("UICorner", {Parent = SliderBg, CornerRadius = UDim.new(0, Scale(2))})
                         
                         local SliderFill = CreateInstance("Frame", {
                             Parent = SliderBg,
@@ -1518,7 +1544,7 @@ function Library:Window(TitleOrIcon)
                             Size = UDim2.new(0, 0, 1, 0)
                         }, {BackgroundColor3 = "Accent"})
                         
-                        CreateInstance("UICorner", {Parent = SliderFill, CornerRadius = UDim.new(0, 3)})
+                        CreateInstance("UICorner", {Parent = SliderFill, CornerRadius = UDim.new(0, Scale(2))})
 
                         local SliderFunctions = {}
                         local Decimals = Props.Decimal or 0
@@ -1581,22 +1607,21 @@ function Library:Window(TitleOrIcon)
                         return SliderFunctions
                     end
 
-                    -- GRID (FIXED - Rectangular cells, fixed checkmark, no notification spam, local storage)
-                                        -- GRID (FIXED - Min 4 columns, Max 8 columns)
-                                        function SectionFunctions:Grid(Props)
-                                            local GridItems = Props.Items or {}
-                                            local Selected = {}
-                                            local Favorites = {}
-                                            local MultiSelect = Props.Multi ~= false
-                                            local MinColumns = Props.MinColumns or 4  -- ADDED
-                                            local MaxColumns = Props.MaxColumns or 8  -- CHANGED default to 8
-                                            local MinCellWidth = Props.MinCellWidth or 160
-                                            local CellHeight = Props.CellHeight or 80
-                                            -- ... rest of setup
-                    
-                                        
+                    -- GRID - Compact with Min 4, Max 8 columns
+                    function SectionFunctions:Grid(Props)
+                        local GridItems = Props.Items or {}
+                        local Selected = {}
+                        local Favorites = {}
+                        local MultiSelect = Props.Multi ~= false
+                        local MinColumns = Props.MinColumns or 4
+                        local MaxColumns = Props.MaxColumns or 8
+                        local MinCellWidth = Props.MinCellWidth or Scale(140)
+                        local CellHeight = Props.CellHeight or Scale(70)
+                        local SearchFilter = ""
+                        local ShowBorders = Props.ShowBorders ~= false
+                        local OnSelect = Props.Callback
+                        local Searchable = Props.Searchable ~= false
 
-                        -- Notification deduplication to prevent stacking
                         local function NotifyOnce(Message, Type)
                             local Key = tostring(Message)
                             if Library.NotificationQueue[Key] then return end
@@ -1607,24 +1632,23 @@ function Library:Window(TitleOrIcon)
                             end)
                         end
 
-                        -- Search box in header
                         if Searchable then
                             HeaderBtn.Text = "  " .. SectionName .. " "
                             
                             SearchBox = CreateInstance("TextBox", {
                                 Parent = HeaderBtn,
                                 BackgroundTransparency = 0,
-                                Size = UDim2.new(0, 120, 0, 22),
-                                Position = UDim2.new(1, -150, 0.5, -11),
+                                Size = UDim2.new(0, Scale(100), 0, Scale(20)),
+                                Position = UDim2.new(1, Scale(-130), 0.5, Scale(-10)),
                                 FontFace = Config.Font,
-                                TextSize = 11,
+                                TextSize = Scale(10),
                                 Text = "",
                                 PlaceholderText = "🔍 Search...",
                                 ClearTextOnFocus = false,
                                 ZIndex = 10
                             }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight", PlaceholderColor3 = "TextMain"})
                             
-                            CreateInstance("UICorner", {Parent = SearchBox, CornerRadius = UDim.new(0, 4)})
+                            CreateInstance("UICorner", {Parent = SearchBox, CornerRadius = UDim.new(0, Scale(4))})
                             local SearchStroke = CreateInstance("UIStroke", {Parent = SearchBox, Thickness = 1}, {Color = "Border"})
                             
                             SearchBox.Focused:Connect(function()
@@ -1635,7 +1659,7 @@ function Library:Window(TitleOrIcon)
                             end)
                             
                             SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-                                SearchFilter = SearchBox.Text:lower()
+                                SearchFilter = (SearchBox.Text or ""):lower()
                                 RefreshGrid()
                             end)
                             
@@ -1647,7 +1671,6 @@ function Library:Window(TitleOrIcon)
                             end)
                         end
 
-                        -- Main container
                         local GridFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
@@ -1669,7 +1692,7 @@ function Library:Window(TitleOrIcon)
 
                         local GridLayout = CreateInstance("UIGridLayout", {
                             Parent = GridContainer,
-                            CellPadding = UDim2.new(0, 10, 0, 10),
+                            CellPadding = UDim2.new(0, Scale(6), 0, Scale(6)),
                             FillDirection = Enum.FillDirection.Horizontal,
                             HorizontalAlignment = Enum.HorizontalAlignment.Left,
                             VerticalAlignment = Enum.VerticalAlignment.Top,
@@ -1679,9 +1702,9 @@ function Library:Window(TitleOrIcon)
                         local EmptyState = CreateInstance("TextLabel", {
                             Parent = GridContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 100),
+                            Size = UDim2.new(1, 0, 0, Scale(80)),
                             FontFace = Config.Font,
-                            TextSize = 14,
+                            TextSize = Scale(12),
                             Text = "No items found",
                             TextColor3 = Config.Colors.TextMain,
                             Visible = false
@@ -1690,24 +1713,22 @@ function Library:Window(TitleOrIcon)
                         local GridFunctions = {}
                         local CellButtons = {}
 
-                        -- FIXED: Calculate rectangular cell size (double width)
-                                                -- FIXED: Calculate cell size with 4 min, 8 max columns
-                                                local function CalculateCellSize()
-                                                    local ContainerWidth = GridContainer.AbsoluteSize.X - 20
-                                                    if ContainerWidth <= 0 then ContainerWidth = 600 end
-                                                    
-                                                    -- Calculate columns but FORCE minimum 4, maximum 8
-                                                    local CalculatedColumns = math.floor(ContainerWidth / (MinCellWidth + 10))
-                                                    local Columns = math.clamp(CalculatedColumns, 4, 8) -- MIN 4, MAX 8
-                                                    
-                                                    local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * 10)) / Columns)
-                                                    return CellWidth, CellHeight, Columns
-                                                end
+                        local function CalculateCellSize()
+                            local ContainerWidth = GridContainer.AbsoluteSize.X - Scale(10)
+                            if ContainerWidth <= 0 then ContainerWidth = Scale(600) end
+                            
+                            local Calculated = math.floor(ContainerWidth / (MinCellWidth + Scale(6)))
+                            local Columns = math.clamp(Calculated, MinColumns, MaxColumns)
+                            
+                            local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * Scale(6))) / Columns)
+                            return CellWidth, CellHeight, Columns
+                        end
 
                         local function FilterItems()
                             local Filtered = {}
+                            local FilterText = SearchFilter or ""
                             for _, Item in ipairs(GridItems) do
-                                if SearchFilter == "" or (Item.Name and Item.Name:lower():find(SearchFilter)) then
+                                if FilterText == "" or (Item.Name and Item.Name:lower():find(FilterText)) then
                                     table.insert(Filtered, Item)
                                 end
                             end
@@ -1736,7 +1757,6 @@ function Library:Window(TitleOrIcon)
                         local function UpdateSelection(Item, IsSelected, CellBtn)
                             if IsSelected then
                                 if not MultiSelect then
-                                    -- Clear others if single select
                                     for _, sel in ipairs(Selected) do
                                         if sel ~= Item then
                                             local idx = table.find(Selected, sel)
@@ -1771,7 +1791,6 @@ function Library:Window(TitleOrIcon)
                             
                             if OnSelect then OnSelect(Selected, Item, IsSelected) end
                             
-                            -- Update local flag storage
                             if Props.Flag and Library.Flags[Props.Flag] then
                                 Library.Flags[Props.Flag].Value = Selected
                             end
@@ -1806,41 +1825,39 @@ function Library:Window(TitleOrIcon)
                                 Visible = true
                             }, {BackgroundColor3 = "ElementBg"})
                             
-                            CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 8)})
+                            CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, Scale(6))})
                             
                             local Stroke
                             if ShowBorders then
                                 Stroke = CreateInstance("UIStroke", {
                                     Parent = CellBtn, 
-                                    Thickness = 1.5,
+                                    Thickness = 1,
                                     Color = Config.Colors.Border
                                 })
                             end
                             
-                            -- FIXED: Checkmark positioned properly inside cell
                             local Checkmark = CreateInstance("TextLabel", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(0, 24, 0, 24),
-                                Position = UDim2.new(1, -12, 0, 8), -- FIXED: Top-right with padding
+                                Size = UDim2.new(0, Scale(20), 0, Scale(20)),
+                                Position = UDim2.new(1, Scale(-10), 0, Scale(6)),
                                 AnchorPoint = Vector2.new(1, 0),
                                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
                                 Text = "✓",
-                                TextSize = 20,
+                                TextSize = Scale(16),
                                 TextColor3 = Config.Colors.TextLight,
                                 Visible = false,
                                 ZIndex = 5
                             })
                             
-                            -- Star button - Top-left
                             local StarBtn = CreateInstance("TextButton", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(0, 24, 0, 24),
-                                Position = UDim2.new(0, 8, 0, 8),
+                                Size = UDim2.new(0, Scale(20), 0, Scale(20)),
+                                Position = UDim2.new(0, Scale(6), 0, Scale(6)),
                                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
                                 Text = Favorites[Item.Name] and "★" or "☆",
-                                TextSize = 18,
+                                TextSize = Scale(14),
                                 TextColor3 = Favorites[Item.Name] and Config.Colors.Warning or Config.Colors.TextMain,
                                 ZIndex = 6,
                                 AutoButtonColor = false
@@ -1850,12 +1867,11 @@ function Library:Window(TitleOrIcon)
                                 ToggleFavorite(Item, StarBtn)
                             end)
                             
-                            -- Image container - Centered for rectangular cell
                             local ImgContainer = CreateInstance("Frame", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(0.3, 0, 0.5, 0),
-                                Position = UDim2.new(0.35, 0, 0.15, 0),
+                                Size = UDim2.new(0.35, 0, 0.5, 0),
+                                Position = UDim2.new(0.325, 0, 0.12, 0),
                                 BorderSizePixel = 0
                             })
                             
@@ -1869,21 +1885,19 @@ function Library:Window(TitleOrIcon)
                                 })
                             end
                             
-                            -- Name label - Bottom
                             local NameLabel = CreateInstance("TextLabel", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
-                                Size = UDim2.new(1, -16, 0, 20),
-                                Position = UDim2.new(0, 8, 1, -28),
+                                Size = UDim2.new(1, Scale(-12), 0, Scale(18)),
+                                Position = UDim2.new(0, Scale(6), 1, Scale(-22)),
                                 FontFace = Config.Font,
-                                TextSize = 11,
+                                TextSize = Scale(10),
                                 Text = Item.Name or "Item",
                                 TextXAlignment = Enum.TextXAlignment.Center,
                                 TextWrapped = true,
                                 TextColor3 = Config.Colors.TextLight
                             })
                             
-                            -- Hover effects
                             CellBtn.MouseEnter:Connect(function()
                                 if not table.find(Selected, Item) then
                                     TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.15}):Play()
@@ -1918,7 +1932,6 @@ function Library:Window(TitleOrIcon)
                             }
                             table.insert(CellButtons, CellData)
                             
-                            -- Handle default selections
                             if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
                                 task.defer(function() 
                                     UpdateSelection(Item, true, CellData) 
@@ -1926,18 +1939,15 @@ function Library:Window(TitleOrIcon)
                             end
                         end
 
-                        -- Initialize
                         task.defer(function()
                             RefreshGrid()
                         end)
                         
-                        -- Handle resize
                         GridContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
                             local CellWidth, CellHeight = CalculateCellSize()
                             GridLayout.CellSize = UDim2.new(0, CellWidth, 0, CellHeight)
                         end)
 
-                        -- API functions with local storage
                         function GridFunctions:SetItems(NewItems)
                             GridItems = NewItems
                             RefreshGrid()
@@ -1998,7 +2008,6 @@ function Library:Window(TitleOrIcon)
                             return GridFunctions:GetSelected()
                         end
 
-                        -- Register with Flag system for persistence
                         if Props.Flag then
                             Library.Flags[Props.Flag] = {
                                 SetValue = GridFunctions.SetValue,
