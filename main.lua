@@ -243,7 +243,6 @@ UserInputService.InputBegan:Connect(function(Input, Processed)
         if Library.WindowVisible then
             Library.MainFrame.Visible = true
             TweenService:Create(Library.MainFrame, CreateTween(0.2), {GroupTransparency = 0}):Play()
-            -- Also fade in the stroke if it exists
             local Stroke = Library.MainFrame:FindFirstChild("UIStroke")
             if Stroke then
                 TweenService:Create(Stroke, CreateTween(0.2), {Transparency = 0}):Play()
@@ -329,7 +328,7 @@ function Library:Window(TitleOrIcon)
         Parent = TopBar,
         BackgroundTransparency = 1,
         Size = UDim2.new(0, 36, 0, 36),
-        Position = UDim2.new(1, -87, 0, 6), -- Left of close button
+        Position = UDim2.new(1, -87, 0, 6),
         Text = "−",
         FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
         TextSize = 24,
@@ -338,13 +337,13 @@ function Library:Window(TitleOrIcon)
     
     CreateInstance("UICorner", {Parent = MinimizeButton, CornerRadius = UDim.new(0, 6)})
     
-    -- CLOSE BUTTON (FIXED X CHARACTER)
+    -- CLOSE BUTTON
     local CloseButton = CreateInstance("TextButton", {
         Parent = TopBar,
         BackgroundTransparency = 1,
         Size = UDim2.new(0, 36, 0, 36),
         Position = UDim2.new(1, -46, 0, 6),
-        Text = "X", -- Changed from "✕" to "X" for better compatibility
+        Text = "X",
         FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
         TextSize = 18,
         AutoButtonColor = false
@@ -352,7 +351,7 @@ function Library:Window(TitleOrIcon)
     
     CreateInstance("UICorner", {Parent = CloseButton, CornerRadius = UDim.new(0, 6)})
     
-    -- Body (for minimize functionality)
+    -- Body
     local Body = CreateInstance("Frame", {
         Parent = MainFrame,
         BackgroundTransparency = 1,
@@ -361,9 +360,33 @@ function Library:Window(TitleOrIcon)
         Name = "Body"
     })
     
+    -- Function to clamp window position to screen bounds
+    local function ClampWindowPosition()
+        local viewportSize = workspace.CurrentCamera.ViewportSize
+        local size = MainFrame.AbsoluteSize
+        local pos = MainFrame.Position
+        
+        -- With AnchorPoint 0.5, 0.5:
+        -- Min X = size.X/2, Max X = viewport.X - size.X/2
+        -- Min Y = size.Y/2, Max Y = viewport.Y - size.Y/2
+        
+        local minX = size.X / 2
+        local maxX = viewportSize.X - size.X / 2
+        local minY = size.Y / 2
+        local maxY = viewportSize.Y - size.Y / 2
+        
+        local newX = math.clamp(pos.X.Offset, minX - (viewportSize.X * pos.X.Scale), maxX - (viewportSize.X * pos.X.Scale))
+        local newY = math.clamp(pos.Y.Offset, minY - (viewportSize.Y * pos.Y.Scale), maxY - (viewportSize.Y * pos.Y.Scale))
+        
+        if newX ~= pos.X.Offset or newY ~= pos.Y.Offset then
+            MainFrame.Position = UDim2.new(pos.X.Scale, newX, pos.Y.Scale, newY)
+        end
+    end
+    
     -- Minimize functionality
     local IsMinimized = false
-    local OriginalSize = MainFrame.Size
+    local PreMinimizeSize = nil
+    local PreMinimizePos = nil
     
     MinimizeButton.MouseEnter:Connect(function()
         TweenService:Create(MinimizeButton, CreateTween(0.15), {BackgroundColor3 = Config.Colors.ElementBg, TextColor3 = Config.Colors.TextLight}):Play()
@@ -376,22 +399,35 @@ function Library:Window(TitleOrIcon)
     MinimizeButton.MouseButton1Click:Connect(function()
         IsMinimized = not IsMinimized
         if IsMinimized then
-            -- Store current size if not already stored
-            if not IsMinimized then
-                OriginalSize = MainFrame.Size
-            end
-            -- Change constraint for minimized state
+            -- Store current state
+            PreMinimizeSize = MainFrame.Size
+            PreMinimizePos = MainFrame.Position
+            
+            -- Change constraint for minimized state (only height constrained)
             SizeConstraint.MinSize = Vector2.new(400, 48)
             Body.Visible = false
-            TweenService:Create(MainFrame, CreateTween(0.2), {Size = UDim2.new(0.9, 0, 0, 48)}):Play()
+            
+            -- Calculate minimized size (keep width, minimal height)
+            local minimizedHeight = 48 -- Just title bar
+            TweenService:Create(MainFrame, CreateTween(0.2), {Size = UDim2.new(PreMinimizeSize.X.Scale, PreMinimizeSize.X.Offset, 0, minimizedHeight)}):Play()
+            
             MinimizeButton.Text = "+"
         else
             Body.Visible = true
-            TweenService:Create(MainFrame, CreateTween(0.2), {Size = UDim2.new(0.9, 0, 0.9, 0)}):Play()
+            
+            -- Restore size
+            TweenService:Create(MainFrame, CreateTween(0.2), {Size = PreMinimizeSize or UDim2.new(0.9, 0, 0.9, 0)}):Play()
+            
             -- Restore constraint after animation
             task.delay(0.2, function()
                 SizeConstraint.MinSize = Vector2.new(400, 300)
             end)
+            
+            -- FIX: Clamp position to ensure window doesn't go off-screen
+            task.delay(0.25, function()
+                ClampWindowPosition()
+            end)
+            
             MinimizeButton.Text = "−"
         end
     end)
@@ -405,7 +441,6 @@ function Library:Window(TitleOrIcon)
     end)
     
     CloseButton.MouseButton1Click:Connect(function()
-        -- FIX: Also tween the stroke transparency to prevent border lingering
         local Tween = TweenService:Create(MainFrame, CreateTween(0.3), {GroupTransparency = 1})
         local StrokeTween = TweenService:Create(MainStroke, CreateTween(0.3), {Transparency = 1})
         Tween:Play()
@@ -413,7 +448,6 @@ function Library:Window(TitleOrIcon)
         Tween.Completed:Wait()
         MainFrame.Visible = false
         Library.WindowVisible = false
-        -- Reset stroke transparency for next open
         MainStroke.Transparency = 0
     end)
 
@@ -1137,31 +1171,36 @@ function Library:Window(TitleOrIcon)
                         return SliderFunctions
                     end
 
-                    -- GRID (FIXED HEIGHT ISSUE)
+                    -- GRID (FIXED VISIBILITY ISSUES)
                     function SectionFunctions:Grid(Props)
                         local GridItems = Props.Items or {}
                         local Selected = {}
                         local MultiSelect = Props.Multi or false
                         local CellSize = Props.CellSize or 80
                         local Padding = Props.Padding or 8
-                        local GridHeight = Props.Height or 200 -- NEW: Configurable height, default 200
+                        local GridHeight = Props.Height or 200
                         local OnSelect = Props.Callback
 
+                        -- Create container with explicit size
                         local GridFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, GridHeight), -- FIXED: Explicit height instead of AutomaticSize
-                            BorderSizePixel = 0
+                            Size = UDim2.new(1, 0, 0, GridHeight),
+                            BorderSizePixel = 0,
+                            Visible = true
                         })
                         
+                        -- ScrollingFrame fills the container
                         local ScrollFrame = CreateInstance("ScrollingFrame", {
                             Parent = GridFrame,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 1, 0), -- Fill the GridFrame
+                            Size = UDim2.new(1, 0, 1, 0),
+                            Position = UDim2.new(0, 0, 0, 0),
                             CanvasSize = UDim2.new(0, 0, 0, 0),
                             ScrollBarThickness = 3,
                             ScrollingDirection = Enum.ScrollingDirection.Y,
-                            AutomaticCanvasSize = Enum.AutomaticSize.Y -- Content determines canvas size
+                            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                            Visible = true
                         }, {ScrollBarImageColor3 = "Border"})
                         
                         local GridLayout = CreateInstance("UIGridLayout", {
@@ -1171,11 +1210,14 @@ function Library:Window(TitleOrIcon)
                             SortOrder = Enum.SortOrder.LayoutOrder,
                             Padding = UDim.new(0, Padding, 0, Padding)
                         })
+
+                        -- FIX: Properly update canvas size
+                        local function UpdateCanvasSize()
+                            local contentSize = GridLayout.AbsoluteContentSize
+                            ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + (Padding * 2))
+                        end
                         
-                        -- Update canvas size when layout changes
-                        GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                            ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, GridLayout.AbsoluteContentSize.Y + Padding)
-                        end)
+                        GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UpdateCanvasSize)
 
                         local GridFunctions = {}
                         local CellButtons = {}
@@ -1219,7 +1261,9 @@ function Library:Window(TitleOrIcon)
                                 BorderSizePixel = 0,
                                 LayoutOrder = Index,
                                 AutoButtonColor = false,
-                                Text = ""
+                                Text = "",
+                                Visible = true,
+                                Size = UDim2.new(0, CellSize, 0, CellSize) -- Explicit size here too
                             }, {BackgroundColor3 = "ElementBg"})
                             
                             CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 6)})
@@ -1243,7 +1287,8 @@ function Library:Window(TitleOrIcon)
                                     Position = UDim2.new(0.5, 0, 0.35, 0),
                                     AnchorPoint = Vector2.new(0.5, 0),
                                     Image = Item.Image,
-                                    ScaleType = Enum.ScaleType.Fit
+                                    ScaleType = Enum.ScaleType.Fit,
+                                    Visible = true
                                 }, {ImageColor3 = "TextMain"})
                                 
                                 CreateInstance("UIStroke", {
@@ -1264,7 +1309,8 @@ function Library:Window(TitleOrIcon)
                                 Text = Item.Name or "Item",
                                 TextXAlignment = Enum.TextXAlignment.Center,
                                 TextWrapped = true,
-                                TextColor3 = Config.Colors.TextMain
+                                TextColor3 = Config.Colors.TextMain,
+                                Visible = true
                             })
                             
                             CellBtn.MouseEnter:Connect(function()
@@ -1303,9 +1349,13 @@ function Library:Window(TitleOrIcon)
                             return CellData
                         end
 
+                        -- Build grid
                         for Index, Item in ipairs(GridItems) do
                             CreateCell(Item, Index)
                         end
+                        
+                        -- Initial canvas size update
+                        task.defer(UpdateCanvasSize)
 
                         function GridFunctions:SetItems(NewItems)
                             for _, Cell in CellButtons do
@@ -1318,6 +1368,7 @@ function Library:Window(TitleOrIcon)
                             for Index, Item in ipairs(GridItems) do
                                 CreateCell(Item, Index)
                             end
+                            UpdateCanvasSize()
                         end
                         
                         function GridFunctions:SetSelected(Items)
