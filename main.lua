@@ -154,12 +154,10 @@ function Library:Notify(Message, Duration, Type)
     
     table.insert(Library.Notifications, NotificationGui)
     
-    -- Animate in
     NotificationGui.Visible = true
     local InTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, 20)})
     InTween:Play()
     
-    -- Auto remove
     task.delay(Duration, function()
         local OutTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, -100), BackgroundTransparency = 1})
         OutTween:Play()
@@ -245,8 +243,17 @@ UserInputService.InputBegan:Connect(function(Input, Processed)
         if Library.WindowVisible then
             Library.MainFrame.Visible = true
             TweenService:Create(Library.MainFrame, CreateTween(0.2), {GroupTransparency = 0}):Play()
+            -- Also fade in the stroke if it exists
+            local Stroke = Library.MainFrame:FindFirstChild("UIStroke")
+            if Stroke then
+                TweenService:Create(Stroke, CreateTween(0.2), {Transparency = 0}):Play()
+            end
         else
             local Tween = TweenService:Create(Library.MainFrame, CreateTween(0.2), {GroupTransparency = 1})
+            local Stroke = Library.MainFrame:FindFirstChild("UIStroke")
+            if Stroke then
+                TweenService:Create(Stroke, CreateTween(0.2), {Transparency = 1}):Play()
+            end
             Tween:Play()
             task.spawn(function()
                 Tween.Completed:Wait()
@@ -278,10 +285,10 @@ function Library:Window(TitleOrIcon)
         GroupTransparency = 0
     }, {BackgroundColor3 = "PanelBg"})
     
-    CreateInstance("UISizeConstraint", {Parent = MainFrame, MaxSize = Vector2.new(900, 650), MinSize = Vector2.new(400, 300)})
+    local SizeConstraint = CreateInstance("UISizeConstraint", {Parent = MainFrame, MaxSize = Vector2.new(900, 650), MinSize = Vector2.new(400, 300)})
     Library.MainFrame = MainFrame
     CreateInstance("UICorner", {Parent = MainFrame, CornerRadius = UDim.new(0, 8)})
-    CreateInstance("UIStroke", {Parent = MainFrame, Thickness = 1}, {Color = "MainBg"})
+    local MainStroke = CreateInstance("UIStroke", {Parent = MainFrame, Thickness = 1, Name = "UIStroke"}, {Color = "MainBg"})
 
     -- Top Bar
     local TopBar = CreateInstance("Frame", {
@@ -317,19 +324,77 @@ function Library:Window(TitleOrIcon)
         }, {TextColor3 = "Accent"})
     end
     
-    -- CLOSE BUTTON (TOP RIGHT)
+    -- MINIMIZE BUTTON
+    local MinimizeButton = CreateInstance("TextButton", {
+        Parent = TopBar,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(0, 36, 0, 36),
+        Position = UDim2.new(1, -87, 0, 6), -- Left of close button
+        Text = "−",
+        FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
+        TextSize = 24,
+        AutoButtonColor = false
+    }, {TextColor3 = "TextMain"})
+    
+    CreateInstance("UICorner", {Parent = MinimizeButton, CornerRadius = UDim.new(0, 6)})
+    
+    -- CLOSE BUTTON (FIXED X CHARACTER)
     local CloseButton = CreateInstance("TextButton", {
         Parent = TopBar,
         BackgroundTransparency = 1,
         Size = UDim2.new(0, 36, 0, 36),
         Position = UDim2.new(1, -46, 0, 6),
-        Text = "✕",
+        Text = "X", -- Changed from "✕" to "X" for better compatibility
         FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
-        TextSize = 20,
+        TextSize = 18,
         AutoButtonColor = false
     }, {TextColor3 = "TextMain"})
     
     CreateInstance("UICorner", {Parent = CloseButton, CornerRadius = UDim.new(0, 6)})
+    
+    -- Body (for minimize functionality)
+    local Body = CreateInstance("Frame", {
+        Parent = MainFrame,
+        BackgroundTransparency = 1,
+        Position = UDim2.new(0, 0, 0, 48),
+        Size = UDim2.new(1, 0, 1, -48),
+        Name = "Body"
+    })
+    
+    -- Minimize functionality
+    local IsMinimized = false
+    local OriginalSize = MainFrame.Size
+    
+    MinimizeButton.MouseEnter:Connect(function()
+        TweenService:Create(MinimizeButton, CreateTween(0.15), {BackgroundColor3 = Config.Colors.ElementBg, TextColor3 = Config.Colors.TextLight}):Play()
+    end)
+    
+    MinimizeButton.MouseLeave:Connect(function()
+        TweenService:Create(MinimizeButton, CreateTween(0.15), {BackgroundColor3 = Color3.fromRGB(0,0,0,0), TextColor3 = Config.Colors.TextMain}):Play()
+    end)
+    
+    MinimizeButton.MouseButton1Click:Connect(function()
+        IsMinimized = not IsMinimized
+        if IsMinimized then
+            -- Store current size if not already stored
+            if not IsMinimized then
+                OriginalSize = MainFrame.Size
+            end
+            -- Change constraint for minimized state
+            SizeConstraint.MinSize = Vector2.new(400, 48)
+            Body.Visible = false
+            TweenService:Create(MainFrame, CreateTween(0.2), {Size = UDim2.new(0.9, 0, 0, 48)}):Play()
+            MinimizeButton.Text = "+"
+        else
+            Body.Visible = true
+            TweenService:Create(MainFrame, CreateTween(0.2), {Size = UDim2.new(0.9, 0, 0.9, 0)}):Play()
+            -- Restore constraint after animation
+            task.delay(0.2, function()
+                SizeConstraint.MinSize = Vector2.new(400, 300)
+            end)
+            MinimizeButton.Text = "−"
+        end
+    end)
     
     CloseButton.MouseEnter:Connect(function()
         TweenService:Create(CloseButton, CreateTween(0.15), {BackgroundColor3 = Config.Colors.Error, TextColor3 = Color3.fromRGB(255,255,255)}):Play()
@@ -340,11 +405,16 @@ function Library:Window(TitleOrIcon)
     end)
     
     CloseButton.MouseButton1Click:Connect(function()
+        -- FIX: Also tween the stroke transparency to prevent border lingering
         local Tween = TweenService:Create(MainFrame, CreateTween(0.3), {GroupTransparency = 1})
+        local StrokeTween = TweenService:Create(MainStroke, CreateTween(0.3), {Transparency = 1})
         Tween:Play()
+        StrokeTween:Play()
         Tween.Completed:Wait()
         MainFrame.Visible = false
         Library.WindowVisible = false
+        -- Reset stroke transparency for next open
+        MainStroke.Transparency = 0
     end)
 
     -- Tab Container
@@ -363,14 +433,6 @@ function Library:Window(TitleOrIcon)
         Padding = UDim.new(0, 5)
     })
 
-    -- Body
-    local Body = CreateInstance("Frame", {
-        Parent = MainFrame,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, 0, 0, 48),
-        Size = UDim2.new(1, 0, 1, -48)
-    })
-    
     -- Sidebar
     local SidebarArea = CreateInstance("Frame", {
         Parent = Body,
@@ -793,11 +855,6 @@ function Library:Window(TitleOrIcon)
 
                     local SectionFunctions = {}
 
-                    local function AttachAddons(FunctionsObj, RightSideContainer, ParentToggleFunc, IsLabel)
-                        -- Colorpicker, Bind, etc. (same as before)
-                        -- ... (keeping existing code for brevity)
-                    end
-
                     -- BUTTON
                     function SectionFunctions:Button(Props)
                         local ButtonFrame = CreateInstance("Frame", {
@@ -1080,30 +1137,31 @@ function Library:Window(TitleOrIcon)
                         return SliderFunctions
                     end
 
-                    -- GRID (FIXED & WORKING)
+                    -- GRID (FIXED HEIGHT ISSUE)
                     function SectionFunctions:Grid(Props)
                         local GridItems = Props.Items or {}
                         local Selected = {}
                         local MultiSelect = Props.Multi or false
                         local CellSize = Props.CellSize or 80
                         local Padding = Props.Padding or 8
+                        local GridHeight = Props.Height or 200 -- NEW: Configurable height, default 200
                         local OnSelect = Props.Callback
 
                         local GridFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 0),
-                            AutomaticSize = Enum.AutomaticSize.Y
+                            Size = UDim2.new(1, 0, 0, GridHeight), -- FIXED: Explicit height instead of AutomaticSize
+                            BorderSizePixel = 0
                         })
                         
                         local ScrollFrame = CreateInstance("ScrollingFrame", {
                             Parent = GridFrame,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, 0),
-                            AutomaticSize = Enum.AutomaticSize.Y,
+                            Size = UDim2.new(1, 0, 1, 0), -- Fill the GridFrame
                             CanvasSize = UDim2.new(0, 0, 0, 0),
                             ScrollBarThickness = 3,
-                            ScrollingDirection = Enum.ScrollingDirection.Y
+                            ScrollingDirection = Enum.ScrollingDirection.Y,
+                            AutomaticCanvasSize = Enum.AutomaticSize.Y -- Content determines canvas size
                         }, {ScrollBarImageColor3 = "Border"})
                         
                         local GridLayout = CreateInstance("UIGridLayout", {
@@ -1114,8 +1172,9 @@ function Library:Window(TitleOrIcon)
                             Padding = UDim.new(0, Padding, 0, Padding)
                         })
                         
+                        -- Update canvas size when layout changes
                         GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-                            ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, GridLayout.AbsoluteContentSize.Y + 10)
+                            ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, GridLayout.AbsoluteContentSize.Y + Padding)
                         end)
 
                         local GridFunctions = {}
@@ -1124,13 +1183,11 @@ function Library:Window(TitleOrIcon)
                         local function UpdateSelection(Item, IsSelected, CellBtn)
                             if IsSelected then
                                 if not MultiSelect then
-                                    -- Deselect all others
                                     for i = #Selected, 1, -1 do
                                         if Selected[i] ~= Item then
                                             table.remove(Selected, i)
                                         end
                                     end
-                                    -- Update visual state
                                     for _, Btn in CellButtons do
                                         if Btn.Item ~= Item then
                                             TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.85}):Play()
@@ -1168,7 +1225,6 @@ function Library:Window(TitleOrIcon)
                             CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 6)})
                             local Stroke = CreateInstance("UIStroke", {Parent = CellBtn, Thickness = 1}, {Color = "Border"})
                             
-                            -- Selection indicator
                             local Indicator = CreateInstance("Frame", {
                                 Parent = CellBtn,
                                 BorderSizePixel = 0,
@@ -1179,7 +1235,6 @@ function Library:Window(TitleOrIcon)
                             }, {BackgroundColor3 = "Accent"})
                             CreateInstance("UICorner", {Parent = Indicator, CornerRadius = UDim.new(0, 5)})
                             
-                            -- Icon/Image
                             if Item.Image then
                                 local ImgLabel = CreateInstance("ImageLabel", {
                                     Parent = CellBtn,
@@ -1191,7 +1246,6 @@ function Library:Window(TitleOrIcon)
                                     ScaleType = Enum.ScaleType.Fit
                                 }, {ImageColor3 = "TextMain"})
                                 
-                                -- Add stroke to image for visibility
                                 CreateInstance("UIStroke", {
                                     Parent = ImgLabel,
                                     Thickness = 0.5,
@@ -1200,7 +1254,6 @@ function Library:Window(TitleOrIcon)
                                 })
                             end
                             
-                            -- Name label
                             CreateInstance("TextLabel", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
@@ -1214,7 +1267,6 @@ function Library:Window(TitleOrIcon)
                                 TextColor3 = Config.Colors.TextMain
                             })
                             
-                            -- Hover effects
                             CellBtn.MouseEnter:Connect(function()
                                 if not table.find(Selected, Item) then
                                     TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.7}):Play()
@@ -1229,13 +1281,11 @@ function Library:Window(TitleOrIcon)
                                 end
                             end)
                             
-                            -- Click to select/deselect
                             CellBtn.MouseButton1Click:Connect(function()
                                 local CurrentlySelected = table.find(Selected, Item) ~= nil
                                 UpdateSelection(Item, not CurrentlySelected, {Frame = CellBtn, Stroke = Stroke, Indicator = Indicator, Item = Item})
                             end)
                             
-                            -- Store reference
                             local CellData = {
                                 Frame = CellBtn,
                                 Stroke = Stroke,
@@ -1244,7 +1294,6 @@ function Library:Window(TitleOrIcon)
                             }
                             table.insert(CellButtons, CellData)
                             
-                            -- Apply default selection
                             if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
                                 task.defer(function() 
                                     UpdateSelection(Item, true, CellData) 
@@ -1254,21 +1303,17 @@ function Library:Window(TitleOrIcon)
                             return CellData
                         end
 
-                        -- Build initial grid
                         for Index, Item in ipairs(GridItems) do
                             CreateCell(Item, Index)
                         end
 
-                        -- Public API
                         function GridFunctions:SetItems(NewItems)
-                            -- Clear old
                             for _, Cell in CellButtons do
                                 Cell.Frame:Destroy()
                             end
                             table.clear(CellButtons)
                             table.clear(Selected)
                             
-                            -- Rebuild
                             GridItems = NewItems
                             for Index, Item in ipairs(GridItems) do
                                 CreateCell(Item, Index)
@@ -1277,11 +1322,9 @@ function Library:Window(TitleOrIcon)
                         
                         function GridFunctions:SetSelected(Items)
                             if type(Items) ~= "table" then Items = {Items} end
-                            -- Deselect all first
                             for _, Cell in CellButtons do
                                 UpdateSelection(Cell.Item, false, Cell)
                             end
-                            -- Select specified
                             for _, Name in Items do
                                 for _, Cell in CellButtons do
                                     if Cell.Item.Name == Name then
@@ -1310,7 +1353,6 @@ function Library:Window(TitleOrIcon)
                             return GridFunctions:GetSelected()
                         end
 
-                        -- Theme update support
                         table.insert(Library.DynamicUpdates, function()
                             for _, Cell in CellButtons do
                                 if table.find(Selected, Cell.Item) then
@@ -1350,11 +1392,19 @@ function Library:Show()
         Library.WindowVisible = true
         Library.MainFrame.Visible = true
         TweenService:Create(Library.MainFrame, CreateTween(0.3), {GroupTransparency = 0}):Play()
+        local Stroke = Library.MainFrame:FindFirstChild("UIStroke")
+        if Stroke then
+            TweenService:Create(Stroke, CreateTween(0.3), {Transparency = 0}):Play()
+        end
     end
 end
 
 function Library:Hide()
     if Library.MainFrame then
+        local Stroke = Library.MainFrame:FindFirstChild("UIStroke")
+        if Stroke then
+            TweenService:Create(Stroke, CreateTween(0.3), {Transparency = 1}):Play()
+        end
         TweenService:Create(Library.MainFrame, CreateTween(0.3), {GroupTransparency = 1}):Play()
         task.delay(0.3, function()
             Library.MainFrame.Visible = false
