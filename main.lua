@@ -1172,263 +1172,334 @@ function Library:Window(TitleOrIcon)
                     end
 
                     -- GRID (FIXED VISIBILITY ISSUES)
-                    function SectionFunctions:Grid(Props)
-                        local GridItems = Props.Items or {}
-                        local Selected = {}
-                        local MultiSelect = Props.Multi or false
-                        local CellSize = Props.CellSize or 80
-                        local Padding = Props.Padding or 8
-                        local GridHeight = Props.Height or 200
-                        local OnSelect = Props.Callback
+                    -- GRID (FIXED VISIBILITY & RENDERING)
+function SectionFunctions:Grid(Props)
+    local GridItems = Props.Items or {}
+    local Selected = {}
+    local MultiSelect = Props.Multi or false
+    local CellSize = Props.CellSize or 80
+    local Padding = Props.Padding or 8
+    local GridHeight = Props.Height or 200
+    local OnSelect = Props.Callback
 
-                        -- Create container with explicit size
-                        local GridFrame = CreateInstance("Frame", {
-                            Parent = ElementsContainer,
-                            BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, GridHeight),
-                            BorderSizePixel = 0,
-                            Visible = true
-                        })
-                        
-                        -- ScrollingFrame fills the container
-                        local ScrollFrame = CreateInstance("ScrollingFrame", {
-                            Parent = GridFrame,
-                            BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 1, 0),
-                            Position = UDim2.new(0, 0, 0, 0),
-                            CanvasSize = UDim2.new(0, 0, 0, 0),
-                            ScrollBarThickness = 3,
-                            ScrollingDirection = Enum.ScrollingDirection.Y,
-                            AutomaticCanvasSize = Enum.AutomaticSize.Y,
-                            Visible = true
-                        }, {ScrollBarImageColor3 = "Border"})
-                        
-                        local GridLayout = CreateInstance("UIGridLayout", {
-                            Parent = ScrollFrame,
-                            CellSize = UDim2.new(0, CellSize, 0, CellSize),
-                            FillDirection = Enum.FillDirection.Horizontal,
-                            SortOrder = Enum.SortOrder.LayoutOrder,
-                            Padding = UDim.new(0, Padding, 0, Padding)
-                        })
+    -- Container for the grid with fixed height
+    local GridFrame = CreateInstance("Frame", {
+        Parent = ElementsContainer,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, GridHeight),
+        BorderSizePixel = 0,
+        Visible = true,
+        ClipsDescendants = false
+    })
+    
+    -- Scrolling frame to hold cells
+    local ScrollFrame = CreateInstance("ScrollingFrame", {
+        Parent = GridFrame,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 1, 0),
+        Position = UDim2.new(0, 0, 0, 0),
+        CanvasSize = UDim2.new(0, 0, 0, 0),
+        ScrollBarThickness = 4,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        Visible = true,
+        BorderSizePixel = 0
+    }, {ScrollBarImageColor3 = "Accent"})
+    
+    local GridLayout = CreateInstance("UIGridLayout", {
+        Parent = ScrollFrame,
+        CellSize = UDim2.new(0, CellSize, 0, CellSize),
+        FillDirection = Enum.FillDirection.Horizontal,
+        HorizontalAlignment = Enum.HorizontalAlignment.Left,
+        VerticalAlignment = Enum.VerticalAlignment.Top,
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Padding = UDim.new(0, Padding, 0, Padding)
+    })
 
-                        -- FIX: Properly update canvas size
-                        local function UpdateCanvasSize()
-                            local contentSize = GridLayout.AbsoluteContentSize
-                            ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, contentSize.Y + (Padding * 2))
-                        end
-                        
-                        GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UpdateCanvasSize)
+    local GridFunctions = {}
+    local CellButtons = {}
+    local IsLayoutReady = false
 
-                        local GridFunctions = {}
-                        local CellButtons = {}
-
-                        local function UpdateSelection(Item, IsSelected, CellBtn)
-                            if IsSelected then
-                                if not MultiSelect then
-                                    for i = #Selected, 1, -1 do
-                                        if Selected[i] ~= Item then
-                                            table.remove(Selected, i)
-                                        end
-                                    end
-                                    for _, Btn in CellButtons do
-                                        if Btn.Item ~= Item then
-                                            TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.85}):Play()
-                                            TweenService:Create(Btn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                                            TweenService:Create(Btn.Indicator, CreateTween(0.15), {BackgroundTransparency = 1}):Play()
-                                        end
-                                    end
-                                end
-                                if not table.find(Selected, Item) then
-                                    table.insert(Selected, Item)
-                                end
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.7}):Play()
-                                TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
-                                TweenService:Create(CellBtn.Indicator, CreateTween(0.15), {BackgroundTransparency = 0.3}):Play()
-                            else
-                                local idx = table.find(Selected, Item)
-                                if idx then table.remove(Selected, idx) end
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.85}):Play()
-                                TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                                TweenService:Create(CellBtn.Indicator, CreateTween(0.15), {BackgroundTransparency = 1}):Play()
-                            end
-                            if OnSelect then OnSelect(Selected, Item, IsSelected) end
-                        end
-
-                        local function CreateCell(Item, Index)
-                            local CellBtn = CreateInstance("TextButton", {
-                                Parent = ScrollFrame,
-                                BackgroundTransparency = 0.85,
-                                BorderSizePixel = 0,
-                                LayoutOrder = Index,
-                                AutoButtonColor = false,
-                                Text = "",
-                                Visible = true,
-                                Size = UDim2.new(0, CellSize, 0, CellSize) -- Explicit size here too
-                            }, {BackgroundColor3 = "ElementBg"})
-                            
-                            CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 6)})
-                            local Stroke = CreateInstance("UIStroke", {Parent = CellBtn, Thickness = 1}, {Color = "Border"})
-                            
-                            local Indicator = CreateInstance("Frame", {
-                                Parent = CellBtn,
-                                BorderSizePixel = 0,
-                                Size = UDim2.new(1, 0, 1, 0),
-                                Position = UDim2.new(0, 0, 0, 0),
-                                Visible = true,
-                                BackgroundTransparency = 1
-                            }, {BackgroundColor3 = "Accent"})
-                            CreateInstance("UICorner", {Parent = Indicator, CornerRadius = UDim.new(0, 5)})
-                            
-                            if Item.Image then
-                                local ImgLabel = CreateInstance("ImageLabel", {
-                                    Parent = CellBtn,
-                                    BackgroundTransparency = 1,
-                                    Size = UDim2.new(0.65, 0, 0.65, 0),
-                                    Position = UDim2.new(0.5, 0, 0.35, 0),
-                                    AnchorPoint = Vector2.new(0.5, 0),
-                                    Image = Item.Image,
-                                    ScaleType = Enum.ScaleType.Fit,
-                                    Visible = true
-                                }, {ImageColor3 = "TextMain"})
-                                
-                                CreateInstance("UIStroke", {
-                                    Parent = ImgLabel,
-                                    Thickness = 0.5,
-                                    Color = Config.Colors.TextMain,
-                                    Transparency = 0.5
-                                })
-                            end
-                            
-                            CreateInstance("TextLabel", {
-                                Parent = CellBtn,
-                                BackgroundTransparency = 1,
-                                Size = UDim2.new(1, -4, 0, 16),
-                                Position = UDim2.new(0, 2, 1, -18),
-                                FontFace = Config.Font,
-                                TextSize = 9,
-                                Text = Item.Name or "Item",
-                                TextXAlignment = Enum.TextXAlignment.Center,
-                                TextWrapped = true,
-                                TextColor3 = Config.Colors.TextMain,
-                                Visible = true
-                            })
-                            
-                            CellBtn.MouseEnter:Connect(function()
-                                if not table.find(Selected, Item) then
-                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.7}):Play()
-                                    TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Accent}):Play()
-                                end
-                            end)
-                            
-                            CellBtn.MouseLeave:Connect(function()
-                                if not table.find(Selected, Item) then
-                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.85}):Play()
-                                    TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Border}):Play()
-                                end
-                            end)
-                            
-                            CellBtn.MouseButton1Click:Connect(function()
-                                local CurrentlySelected = table.find(Selected, Item) ~= nil
-                                UpdateSelection(Item, not CurrentlySelected, {Frame = CellBtn, Stroke = Stroke, Indicator = Indicator, Item = Item})
-                            end)
-                            
-                            local CellData = {
-                                Frame = CellBtn,
-                                Stroke = Stroke,
-                                Indicator = Indicator,
-                                Item = Item
-                            }
-                            table.insert(CellButtons, CellData)
-                            
-                            if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
-                                task.defer(function() 
-                                    UpdateSelection(Item, true, CellData) 
-                                end)
-                            end
-                            
-                            return CellData
-                        end
-
-                        -- Build grid
-                        for Index, Item in ipairs(GridItems) do
-                            CreateCell(Item, Index)
-                        end
-                        
-                        -- Initial canvas size update
-                        task.defer(UpdateCanvasSize)
-
-                        function GridFunctions:SetItems(NewItems)
-                            for _, Cell in CellButtons do
-                                Cell.Frame:Destroy()
-                            end
-                            table.clear(CellButtons)
-                            table.clear(Selected)
-                            
-                            GridItems = NewItems
-                            for Index, Item in ipairs(GridItems) do
-                                CreateCell(Item, Index)
-                            end
-                            UpdateCanvasSize()
-                        end
-                        
-                        function GridFunctions:SetSelected(Items)
-                            if type(Items) ~= "table" then Items = {Items} end
-                            for _, Cell in CellButtons do
-                                UpdateSelection(Cell.Item, false, Cell)
-                            end
-                            for _, Name in Items do
-                                for _, Cell in CellButtons do
-                                    if Cell.Item.Name == Name then
-                                        UpdateSelection(Cell.Item, true, Cell)
-                                        break
-                                    end
-                                end
-                            end
-                        end
-                        
-                        function GridFunctions:GetSelected()
-                            return Selected
-                        end
-                        
-                        function GridFunctions:ClearSelection()
-                            for _, Cell in CellButtons do
-                                UpdateSelection(Cell.Item, false, Cell)
-                            end
-                        end
-                        
-                        function GridFunctions:SetValue(Val)
-                            GridFunctions:SetSelected(Val)
-                        end
-                        
-                        function GridFunctions:GetValue()
-                            return GridFunctions:GetSelected()
-                        end
-
-                        table.insert(Library.DynamicUpdates, function()
-                            for _, Cell in CellButtons do
-                                if table.find(Selected, Cell.Item) then
-                                    Cell.Stroke.Color = Config.Colors.Accent
-                                else
-                                    Cell.Stroke.Color = Config.Colors.Border
-                                end
-                            end
-                        end)
-                        
-                        if Props.Flag then 
-                            Library.Flags[Props.Flag] = GridFunctions 
-                        end
-                        return GridFunctions
-                    end
-
-                    return SectionFunctions
-                end
-                return SubFunctions
-            end
-            return CategoryFunctions
-        end
-        return TabFunctions
+    -- FIX: Force canvas update with better calculation
+    local function UpdateCanvasSize()
+        if not GridLayout then return end
+        local contentSize = GridLayout.AbsoluteContentSize
+        -- Add extra padding at bottom
+        local newHeight = contentSize.Y + (Padding * 2)
+        if newHeight < 0 then newHeight = 0 end
+        ScrollFrame.CanvasSize = UDim2.new(0, 0, 0, newHeight)
     end
-    return WindowFunctions
+    
+    -- Wait for layout to compute then update
+    local function ForceUpdate()
+        task.wait()
+        if GridLayout and GridLayout.Parent then
+            UpdateCanvasSize()
+        end
+    end
+    
+    GridLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(UpdateCanvasSize)
+
+    local function UpdateSelection(Item, IsSelected, CellBtn)
+        if IsSelected then
+            if not MultiSelect then
+                -- Deselect all others
+                local toRemove = {}
+                for _, sel in ipairs(Selected) do
+                    if sel ~= Item then
+                        table.insert(toRemove, sel)
+                    end
+                end
+                for _, rem in ipairs(toRemove) do
+                    local idx = table.find(Selected, rem)
+                    if idx then table.remove(Selected, idx) end
+                end
+                
+                -- Update visual state for all other cells
+                for _, Btn in ipairs(CellButtons) do
+                    if Btn.Item ~= Item then
+                        TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3}):Play()
+                        TweenService:Create(Btn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                        if Btn.Checkmark then
+                            Btn.Checkmark.Visible = false
+                        end
+                    end
+                end
+            end
+            if not table.find(Selected, Item) then
+                table.insert(Selected, Item)
+            end
+            -- Selected visual state
+            TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.1}):Play()
+            TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
+            TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundColor3 = Config.Colors.Accent}):Play()
+            if CellBtn.Checkmark then
+                CellBtn.Checkmark.Visible = true
+            end
+        else
+            local idx = table.find(Selected, Item)
+            if idx then table.remove(Selected, idx) end
+            -- Deselected visual state
+            TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3}):Play()
+            TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundColor3 = Config.Colors.ElementBg}):Play()
+            TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+            if CellBtn.Checkmark then
+                CellBtn.Checkmark.Visible = false
+            end
+        end
+        if OnSelect then OnSelect(Selected, Item, IsSelected) end
+    end
+
+    local function CreateCell(Item, Index)
+        local CellBtn = CreateInstance("TextButton", {
+            Parent = ScrollFrame,
+            BackgroundTransparency = 0.3, -- REDUCED from 0.85 (more visible)
+            BorderSizePixel = 0,
+            LayoutOrder = Index,
+            AutoButtonColor = false,
+            Text = "",
+            Visible = true,
+            Size = UDim2.new(0, CellSize, 0, CellSize)
+        }, {BackgroundColor3 = "ElementBg"})
+        
+        CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 8)})
+        
+        -- Visible border
+        local Stroke = CreateInstance("UIStroke", {
+            Parent = CellBtn, 
+            Thickness = 1.5,
+            Color = Config.Colors.Border
+        })
+        
+        -- Selection indicator (checkmark)
+        local Checkmark = CreateInstance("TextLabel", {
+            Parent = CellBtn,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0, 20, 0, 20),
+            Position = UDim2.new(1, -10, 0, -5),
+            AnchorPoint = Vector2.new(1, 0),
+            FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
+            Text = "✓",
+            TextSize = 16,
+            TextColor3 = Config.Colors.TextLight,
+            Visible = false,
+            ZIndex = 5
+        })
+        
+        -- Image container
+        local ImgContainer = CreateInstance("Frame", {
+            Parent = CellBtn,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(0.7, 0, 0.6, 0),
+            Position = UDim2.new(0.15, 0, 0.1, 0),
+            BorderSizePixel = 0
+        })
+        
+        if Item.Image then
+            local ImgLabel = CreateInstance("ImageLabel", {
+                Parent = ImgContainer,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 1, 0),
+                Position = UDim2.new(0, 0, 0, 0),
+                Image = Item.Image,
+                ScaleType = Enum.ScaleType.Fit
+            })
+            
+            -- Add placeholder text if image fails
+            ImgLabel:GetPropertyChangedSignal("ImageRectOffset"):Connect(function()
+                -- If image loads, this will change from 0,0
+            end)
+        else
+            -- Placeholder icon/text when no image
+            local Placeholder = CreateInstance("TextLabel", {
+                Parent = ImgContainer,
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 1, 0),
+                FontFace = Config.Font,
+                Text = "📦", -- Box emoji as placeholder
+                TextSize = 32,
+                TextColor3 = Config.Colors.TextMain
+            })
+        end
+        
+        -- Name label at bottom
+        local NameLabel = CreateInstance("TextLabel", {
+            Parent = CellBtn,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, -8, 0, 20),
+            Position = UDim2.new(0, 4, 1, -24),
+            FontFace = Config.Font,
+            TextSize = 11,
+            Text = Item.Name or "Item",
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextWrapped = true,
+            TextColor3 = Config.Colors.TextLight -- Lighter text for visibility
+        })
+        
+        -- Hover effects
+        CellBtn.MouseEnter:Connect(function()
+            if not table.find(Selected, Item) then
+                TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.15}):Play()
+                TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Accent}):Play()
+            end
+        end)
+        
+        CellBtn.MouseLeave:Connect(function()
+            if not table.find(Selected, Item) then
+                TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.3}):Play()
+                TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Border}):Play()
+            end
+        end)
+        
+        CellBtn.MouseButton1Click:Connect(function()
+            local CurrentlySelected = table.find(Selected, Item) ~= nil
+            UpdateSelection(Item, not CurrentlySelected, {
+                Frame = CellBtn, 
+                Stroke = Stroke, 
+                Item = Item,
+                Checkmark = Checkmark
+            })
+        end)
+        
+        local CellData = {
+            Frame = CellBtn,
+            Stroke = Stroke,
+            Item = Item,
+            Checkmark = Checkmark
+        }
+        table.insert(CellButtons, CellData)
+        
+        -- Apply default selection
+        if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
+            task.defer(function() 
+                UpdateSelection(Item, true, CellData) 
+            end)
+        end
+        
+        return CellData
+    end
+
+    -- Build grid
+    for Index, Item in ipairs(GridItems) do
+        CreateCell(Item, Index)
+    end
+    
+    -- Force layout update after creation
+    task.defer(function()
+        UpdateCanvasSize()
+        -- Double-check after a short delay
+        task.wait(0.1)
+        UpdateCanvasSize()
+    end)
+
+    function GridFunctions:SetItems(NewItems)
+        for _, Cell in ipairs(CellButtons) do
+            Cell.Frame:Destroy()
+        end
+        table.clear(CellButtons)
+        table.clear(Selected)
+        
+        GridItems = NewItems
+        for Index, Item in ipairs(GridItems) do
+            CreateCell(Item, Index)
+        end
+        UpdateCanvasSize()
+    end
+    
+    function GridFunctions:SetSelected(Items)
+        if type(Items) ~= "table" then Items = {Items} end
+        for _, Cell in ipairs(CellButtons) do
+            UpdateSelection(Cell.Item, false, Cell)
+        end
+        for _, Name in ipairs(Items) do
+            for _, Cell in ipairs(CellButtons) do
+                if Cell.Item.Name == Name then
+                    UpdateSelection(Cell.Item, true, Cell)
+                    break
+                end
+            end
+        end
+    end
+    
+    function GridFunctions:GetSelected()
+        local result = {}
+        for _, item in ipairs(Selected) do
+            table.insert(result, item)
+        end
+        return result
+    end
+    
+    function GridFunctions:ClearSelection()
+        for _, Cell in ipairs(CellButtons) do
+            UpdateSelection(Cell.Item, false, Cell)
+        end
+    end
+    
+    function GridFunctions:SetValue(Val)
+        GridFunctions:SetSelected(Val)
+    end
+    
+    function GridFunctions:GetValue()
+        return GridFunctions:GetSelected()
+    end
+
+    -- Theme update support
+    table.insert(Library.DynamicUpdates, function()
+        for _, Cell in ipairs(CellButtons) do
+            if table.find(Selected, Cell.Item) then
+                Cell.Stroke.Color = Config.Colors.Accent
+                Cell.Frame.BackgroundColor3 = Config.Colors.Accent
+            else
+                Cell.Stroke.Color = Config.Colors.Border
+                Cell.Frame.BackgroundColor3 = Config.Colors.ElementBg
+            end
+        end
+    end)
+    
+    if Props.Flag then 
+        Library.Flags[Props.Flag] = GridFunctions 
+    end
+    return GridFunctions
 end
 
 -- Additional Utility Functions
