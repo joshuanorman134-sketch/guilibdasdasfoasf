@@ -167,7 +167,6 @@ function Library:Confirm(Title, Message, Callback)
     CreateInstance("UICorner", {Parent = Dialog, CornerRadius = UDim.new(0, 8)})
     CreateInstance("UIStroke", {Parent = Dialog, Thickness = 1}, {Color = "Accent"})
     
-    -- Backdrop
     local Backdrop = CreateInstance("Frame", {
         Parent = Library.MainFrame,
         Size = UDim2.new(1, 0, 1, 0),
@@ -435,7 +434,6 @@ function Library:Window(TitleOrIcon)
     CreateInstance("UICorner", {Parent = MainFrame, CornerRadius = UDim.new(0, 8)})
     local MainStroke = CreateInstance("UIStroke", {Parent = MainFrame, Thickness = 1, Name = "UIStroke"}, {Color = "MainBg"})
 
-    -- Top Bar
     local TopBar = CreateInstance("Frame", {
         Name = "TopBar",
         Parent = MainFrame,
@@ -445,7 +443,6 @@ function Library:Window(TitleOrIcon)
     
     MakeDraggable(TopBar, MainFrame)
     
-    -- Title/Icon
     if tostring(TitleOrIcon):find("rbxassetid") then
         CreateInstance("ImageLabel", {
             Parent = TopBar,
@@ -469,7 +466,6 @@ function Library:Window(TitleOrIcon)
         }, {TextColor3 = "Accent"})
     end
     
-    -- MINIMIZE BUTTON
     local MinimizeButton = CreateInstance("TextButton", {
         Parent = TopBar,
         BackgroundTransparency = 1,
@@ -483,7 +479,6 @@ function Library:Window(TitleOrIcon)
     
     CreateInstance("UICorner", {Parent = MinimizeButton, CornerRadius = UDim.new(0, 6)})
     
-    -- CLOSE BUTTON
     local CloseButton = CreateInstance("TextButton", {
         Parent = TopBar,
         BackgroundTransparency = 1,
@@ -497,7 +492,6 @@ function Library:Window(TitleOrIcon)
     
     CreateInstance("UICorner", {Parent = CloseButton, CornerRadius = UDim.new(0, 6)})
     
-    -- Body
     local Body = CreateInstance("Frame", {
         Parent = MainFrame,
         BackgroundTransparency = 1,
@@ -506,7 +500,6 @@ function Library:Window(TitleOrIcon)
         Name = "Body"
     })
     
-    -- Function to clamp window position to screen bounds
     local function ClampWindowPosition()
         local viewportSize = workspace.CurrentCamera.ViewportSize
         local size = MainFrame.AbsoluteSize
@@ -525,7 +518,6 @@ function Library:Window(TitleOrIcon)
         end
     end
     
-    -- Minimize functionality
     local IsMinimized = false
     local PreMinimizeSize = nil
     
@@ -583,7 +575,6 @@ function Library:Window(TitleOrIcon)
         MainStroke.Transparency = 0
     end)
 
-    -- Tab Container
     local TabContainer = CreateInstance("Frame", {
         Parent = TopBar,
         BackgroundTransparency = 1,
@@ -599,7 +590,6 @@ function Library:Window(TitleOrIcon)
         Padding = UDim.new(0, 5)
     })
 
-    -- Sidebar
     local SidebarArea = CreateInstance("Frame", {
         Parent = Body,
         BackgroundTransparency = 1,
@@ -629,7 +619,6 @@ function Library:Window(TitleOrIcon)
     
     CreateInstance("UIListLayout", {Parent = SidebarList, Padding = UDim.new(0, 10)})
 
-    -- Content Area
     local ContentArea = CreateInstance("Frame", {
         Parent = Body,
         BackgroundTransparency = 1,
@@ -659,7 +648,6 @@ function Library:Window(TitleOrIcon)
     
     CreateInstance("UIListLayout", {Parent = SectionContainer, Padding = UDim.new(0, 10)})
 
-    -- Fade Overlays
     local ContentFadeOverlay = CreateInstance("Frame", {
         Parent = ContentArea,
         Name = "ContentFadeOverlay",
@@ -968,10 +956,18 @@ function Library:Window(TitleOrIcon)
                         SectionFrame.Visible = true 
                     end
 
-                    local HeaderBtn = CreateInstance("TextButton", {
+                    -- Header with search capability
+                    local HeaderContainer = CreateInstance("Frame", {
                         Parent = SectionFrame,
                         BackgroundTransparency = 1,
                         Size = UDim2.new(1, 0, 0, 32),
+                        BorderSizePixel = 0
+                    })
+                    
+                    local HeaderBtn = CreateInstance("TextButton", {
+                        Parent = HeaderContainer,
+                        BackgroundTransparency = 1,
+                        Size = UDim2.new(1, 0, 1, 0),
                         Text = "  " .. SectionName,
                         FontFace = Config.Font,
                         TextSize = 12,
@@ -1020,6 +1016,8 @@ function Library:Window(TitleOrIcon)
                     end)
 
                     local SectionFunctions = {}
+                    local SearchBox = nil
+                    local SearchFunction = nil
 
                     -- BUTTON
                     function SectionFunctions:Button(Props)
@@ -1582,24 +1580,59 @@ function Library:Window(TitleOrIcon)
                         return SliderFunctions
                     end
 
-                    -- GRID (FULLY FEATURED)
+                    -- GRID (FIXED - Search in header, proper sizing)
                     function SectionFunctions:Grid(Props)
                         local GridItems = Props.Items or {}
                         local Selected = {}
                         local Favorites = {}
                         local MultiSelect = Props.Multi or false
                         local MaxColumns = Props.MaxColumns or 8
-                        local MinCellSize = Props.MinCellSize or 60
+                        local MinCellSize = Props.MinCellSize or 80
                         local SearchFilter = ""
                         local ShowBorders = Props.ShowBorders ~= false
                         local OnSelect = Props.Callback
+                        local Searchable = Props.Searchable ~= false
 
-                        -- Calculate cell size based on container width
-                        local function CalculateCellSize()
-                            local ContainerWidth = GridFrame.AbsoluteSize.X - 20 -- padding
-                            local Columns = math.min(MaxColumns, math.max(1, math.floor(ContainerWidth / (MinCellSize + 10))))
-                            local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * 10)) / Columns)
-                            return CellWidth, Columns
+                        -- Add search box to section header (between title and chevron)
+                        if Searchable then
+                            HeaderBtn.Text = "  " .. SectionName .. " " -- Add space for padding
+                            
+                            SearchBox = CreateInstance("TextBox", {
+                                Parent = HeaderBtn,
+                                BackgroundTransparency = 0,
+                                Size = UDim2.new(0, 120, 0, 22),
+                                Position = UDim2.new(1, -150, 0.5, -11), -- Position before chevron
+                                FontFace = Config.Font,
+                                TextSize = 11,
+                                Text = "",
+                                PlaceholderText = "🔍 Search...",
+                                ClearTextOnFocus = false,
+                                ZIndex = 10
+                            }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight", PlaceholderColor3 = "TextMain"})
+                            
+                            CreateInstance("UICorner", {Parent = SearchBox, CornerRadius = UDim.new(0, 4)})
+                            local SearchStroke = CreateInstance("UIStroke", {Parent = SearchBox, Thickness = 1}, {Color = "Border"})
+                            
+                            SearchBox.Focused:Connect(function()
+                                TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                            end)
+                            SearchBox.Focused:Connect(function()
+                                TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                            end)
+                            
+                            -- Update search filter
+                            SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+                                SearchFilter = SearchBox.Text:lower()
+                                RefreshGrid()
+                            end)
+                            
+                            -- Prevent section toggle when clicking search
+                            SearchBox.Focused:Connect(function()
+                                HeaderBtn.Active = false
+                            end)
+                            SearchBox.FocusLost:Connect(function()
+                                HeaderBtn.Active = true
+                            end)
                         end
 
                         -- Main container
@@ -1612,49 +1645,12 @@ function Library:Window(TitleOrIcon)
                             Visible = true,
                             ClipsDescendants = false
                         })
-                        
-                        -- Search Bar
-                        local SearchFrame
-                        if Props.Searchable ~= false then
-                            SearchFrame = CreateInstance("Frame", {
-                                Parent = GridFrame,
-                                BackgroundTransparency = 1,
-                                Size = UDim2.new(1, 0, 0, 30),
-                                Visible = true
-                            })
-                            
-                            local SearchBox = CreateInstance("TextBox", {
-                                Parent = SearchFrame,
-                                BorderSizePixel = 0,
-                                Size = UDim2.new(1, 0, 0, 28),
-                                FontFace = Config.Font,
-                                TextSize = 12,
-                                Text = "",
-                                PlaceholderText = "🔍 Search...",
-                                ClearTextOnFocus = false
-                            }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight", PlaceholderColor3 = "TextMain"})
-                            
-                            CreateInstance("UICorner", {Parent = SearchBox, CornerRadius = UDim.new(0, 6)})
-                            local SearchStroke = CreateInstance("UIStroke", {Parent = SearchBox, Thickness = 1}, {Color = "Border"})
-                            
-                            SearchBox.Focused:Connect(function()
-                                TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
-                            end)
-                            SearchBox.FocusLost:Connect(function()
-                                TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
-                            end)
-                            
-                            SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
-                                SearchFilter = SearchBox.Text:lower()
-                                RefreshGrid()
-                            end)
-                        end
 
                         -- Grid Container
                         local GridContainer = CreateInstance("Frame", {
                             Parent = GridFrame,
                             BackgroundTransparency = 1,
-                            Position = UDim2.new(0, 0, 0, SearchFrame and 35 or 0),
+                            Position = UDim2.new(0, 0, 0, 0),
                             Size = UDim2.new(1, 0, 0, 0),
                             AutomaticSize = Enum.AutomaticSize.Y,
                             BorderSizePixel = 0
@@ -1684,9 +1680,13 @@ function Library:Window(TitleOrIcon)
                         local GridFunctions = {}
                         local CellButtons = {}
 
-                        local function UpdateLayout()
-                            local CellSize = CalculateCellSize()
-                            GridLayout.CellSize = UDim2.new(0, CellSize, 0, CellSize)
+                        -- Calculate cell size based on container width
+                        local function CalculateCellSize()
+                            local ContainerWidth = GridContainer.AbsoluteSize.X - 20 -- padding
+                            if ContainerWidth <= 0 then ContainerWidth = 300 end -- fallback
+                            local Columns = math.min(MaxColumns, math.max(1, math.floor(ContainerWidth / (MinCellSize + 10))))
+                            local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * 10)) / Columns)
+                            return CellWidth, Columns
                         end
 
                         local function FilterItems()
@@ -1711,7 +1711,6 @@ function Library:Window(TitleOrIcon)
                             -- Show/hide empty state
                             if #Filtered == 0 then
                                 EmptyState.Visible = true
-                                GridContainer.Size = UDim2.new(1, 0, 0, 100)
                                 return
                             else
                                 EmptyState.Visible = false
@@ -1722,7 +1721,9 @@ function Library:Window(TitleOrIcon)
                                 CreateCell(Item, Index)
                             end
                             
-                            UpdateLayout()
+                            -- Update layout
+                            local CellSize = CalculateCellSize()
+                            GridLayout.CellSize = UDim2.new(0, CellSize, 0, CellSize)
                         end
 
                         local function UpdateSelection(Item, IsSelected, CellBtn)
@@ -1739,6 +1740,9 @@ function Library:Window(TitleOrIcon)
                                             TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3}):Play()
                                             Btn.Frame.BackgroundColor3 = Config.Colors.ElementBg
                                             if Btn.Checkmark then Btn.Checkmark.Visible = false end
+                                            if Btn.Star then
+                                                -- Keep star color consistent
+                                            end
                                         end
                                     end
                                 end
@@ -1778,8 +1782,7 @@ function Library:Window(TitleOrIcon)
                                 LayoutOrder = Index,
                                 AutoButtonColor = false,
                                 Text = "",
-                                Visible = true,
-                                Size = UDim2.new(0, CellSize, 0, CellSize)
+                                Visible = true
                             }, {BackgroundColor3 = "ElementBg"})
                             
                             CreateInstance("UICorner", {Parent = CellBtn, CornerRadius = UDim.new(0, 8)})
@@ -1881,7 +1884,8 @@ function Library:Window(TitleOrIcon)
                                     Frame = CellBtn, 
                                     Stroke = Stroke, 
                                     Item = Item,
-                                    Checkmark = Checkmark
+                                    Checkmark = Checkmark,
+                                    Star = StarBtn
                                 })
                             end)
                             
@@ -1889,7 +1893,8 @@ function Library:Window(TitleOrIcon)
                                 Frame = CellBtn,
                                 Stroke = Stroke,
                                 Item = Item,
-                                Checkmark = Checkmark
+                                Checkmark = Checkmark,
+                                Star = StarBtn
                             }
                             table.insert(CellButtons, CellData)
                             
@@ -1899,12 +1904,15 @@ function Library:Window(TitleOrIcon)
                             end
                         end
 
-                        -- Initial build
-                        RefreshGrid()
+                        -- Initial build with delay for layout
+                        task.defer(function()
+                            RefreshGrid()
+                        end)
                         
                         -- Update on resize
-                        GridFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-                            UpdateLayout()
+                        GridContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+                            local CellSize = CalculateCellSize()
+                            GridLayout.CellSize = UDim2.new(0, CellSize, 0, CellSize)
                         end)
 
                         -- API
@@ -1948,6 +1956,12 @@ function Library:Window(TitleOrIcon)
                                 if isFav then table.insert(favs, name) end
                             end
                             return favs
+                        end
+
+                        function GridFunctions:SetSearchVisible(Visible)
+                            if SearchBox then
+                                SearchBox.Visible = Visible
+                            end
                         end
 
                         if Props.Flag then Library.Flags[Props.Flag] = GridFunctions end
