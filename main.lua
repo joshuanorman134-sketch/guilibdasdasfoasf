@@ -1582,18 +1582,19 @@ function Library:Window(TitleOrIcon)
                     end
 
                     -- GRID (FIXED - Rectangular cells, fixed checkmark, no notification spam, local storage)
-                    function SectionFunctions:Grid(Props)
-                        local GridItems = Props.Items or {}
-                        local Selected = {}
-                        local Favorites = {}
-                        local MultiSelect = Props.Multi ~= false -- NOW DEFAULTS TO TRUE
-                        local MaxColumns = Props.MaxColumns or 4 -- Reduced for wider cells
-                        local MinCellWidth = Props.MinCellWidth or 160 -- Double width
-                        local CellHeight = Props.CellHeight or 80 -- Fixed height
-                        local SearchFilter = ""
-                        local ShowBorders = Props.ShowBorders ~= false
-                        local OnSelect = Props.Callback
-                        local Searchable = Props.Searchable ~= false
+                                        -- GRID (FIXED - Min 4 columns, Max 8 columns)
+                                        function SectionFunctions:Grid(Props)
+                                            local GridItems = Props.Items or {}
+                                            local Selected = {}
+                                            local Favorites = {}
+                                            local MultiSelect = Props.Multi ~= false
+                                            local MinColumns = Props.MinColumns or 4  -- ADDED
+                                            local MaxColumns = Props.MaxColumns or 8  -- CHANGED default to 8
+                                            local MinCellWidth = Props.MinCellWidth or 160
+                                            local CellHeight = Props.CellHeight or 80
+                                            -- ... rest of setup
+                    
+                                        
 
                         -- Notification deduplication to prevent stacking
                         local function NotifyOnce(Message, Type)
@@ -1690,13 +1691,18 @@ function Library:Window(TitleOrIcon)
                         local CellButtons = {}
 
                         -- FIXED: Calculate rectangular cell size (double width)
-                        local function CalculateCellSize()
-                            local ContainerWidth = GridContainer.AbsoluteSize.X - 20
-                            if ContainerWidth <= 0 then ContainerWidth = 600 end
-                            local Columns = math.min(MaxColumns, math.max(1, math.floor(ContainerWidth / (MinCellWidth + 10))))
-                            local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * 10)) / Columns)
-                            return CellWidth, CellHeight, Columns
-                        end
+                                                -- FIXED: Calculate cell size with 4 min, 8 max columns
+                                                local function CalculateCellSize()
+                                                    local ContainerWidth = GridContainer.AbsoluteSize.X - 20
+                                                    if ContainerWidth <= 0 then ContainerWidth = 600 end
+                                                    
+                                                    -- Calculate columns but FORCE minimum 4, maximum 8
+                                                    local CalculatedColumns = math.floor(ContainerWidth / (MinCellWidth + 10))
+                                                    local Columns = math.clamp(CalculatedColumns, 4, 8) -- MIN 4, MAX 8
+                                                    
+                                                    local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * 10)) / Columns)
+                                                    return CellWidth, CellHeight, Columns
+                                                end
 
                         local function FilterItems()
                             local Filtered = {}
