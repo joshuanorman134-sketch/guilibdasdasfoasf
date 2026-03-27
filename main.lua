@@ -45,17 +45,17 @@ local function CreateTween(Time, Style, Direction)
 end
 
 local function CreateInstance(Class, Properties, ThemeProps)
-    local Instance = game:GetService("InsertService"):LoadLocalAsset("rbxasset://fonts/families/csSourceSansPro.json") and Instance.new(Class) or Instance.new(Class)
+    local Inst = Instance.new(Class)
     for Key, Value in Properties do 
-        Instance[Key] = Value 
+        Inst[Key] = Value 
     end
     if ThemeProps then 
         for Prop, ColorKey in ThemeProps do 
-            Instance[Prop] = Config.Colors[ColorKey]
-            table.insert(Library.ThemeObjects, {Instance, Prop, ColorKey}) 
+            Inst[Prop] = Config.Colors[ColorKey]
+            table.insert(Library.ThemeObjects, {Inst, Prop, ColorKey}) 
         end 
     end
-    return Instance
+    return Inst
 end
 
 local function GetBindText(Bind)
