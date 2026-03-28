@@ -23,6 +23,7 @@ Library.Scale = 1
 Library.MaxNotifications = 5
 Library.CustomContainers = {}
 Library.ViewportCache = {}
+Library.NotificationContainer = nil
 
 -- Configuration
 local Config = {
@@ -276,30 +277,70 @@ function Library:Notify(Message, Duration, Type)
     Type = Type or "Info"
     Duration = Duration or 3
 
+    if not Library.NotificationContainer then
+        local NotificationParent = Library.MainFrame and Library.MainFrame.Parent or game.CoreGui
+        Library.NotificationContainer = CreateInstance("Frame", {
+            Name = "NotificationContainer",
+            Parent = NotificationParent,
+            BackgroundTransparency = 1,
+            AnchorPoint = Vector2.new(0.5, 0),
+            Position = UDim2.new(0.5, 0, 0, Scale(14)),
+            Size = UDim2.new(0, Scale(320), 1, 0),
+            BorderSizePixel = 0,
+            ZIndex = 4999
+        })
+
+        CreateInstance("UIListLayout", {
+            Parent = Library.NotificationContainer,
+            FillDirection = Enum.FillDirection.Vertical,
+            HorizontalAlignment = Enum.HorizontalAlignment.Center,
+            SortOrder = Enum.SortOrder.LayoutOrder,
+            Padding = UDim.new(0, Scale(6))
+        })
+    end
+
+    local function dismissNotification(notificationGui)
+        if not notificationGui or notificationGui:GetAttribute("Closing") then return end
+        notificationGui:SetAttribute("Closing", true)
+
+        local outTween = TweenService:Create(notificationGui, CreateTween(0.2), {
+            Size = UDim2.new(1, 0, 0, 0),
+            BackgroundTransparency = 1
+        })
+        outTween:Play()
+        outTween.Completed:Wait()
+
+        local idx = table.find(Library.Notifications, notificationGui)
+        if idx then
+            table.remove(Library.Notifications, idx)
+        end
+
+        if notificationGui.Parent then
+            notificationGui:Destroy()
+        end
+    end
+
     -- Check queue limit
     if #Library.Notifications >= Library.MaxNotifications then
         local oldest = table.remove(Library.Notifications, 1)
         if oldest then
             pcall(function()
-                local OutTween = TweenService:Create(oldest, CreateTween(0.2), {Position = UDim2.new(0.5, 0, 0, Scale(-80)), BackgroundTransparency = 1})
-                OutTween:Play()
-                OutTween.Completed:Wait()
-                oldest:Destroy()
+                dismissNotification(oldest)
             end)
         end
     end
 
     local NotificationGui = CreateInstance("Frame", {
         Name = "Notification",
-        Parent = Library.MainFrame and Library.MainFrame.Parent or game.CoreGui,
-        Size = UDim2.new(0, Scale(260), 0, Scale(50)),
-        Position = UDim2.new(0.5, 0, 0, Scale(80)),
-        AnchorPoint = Vector2.new(0.5, 0),
+        Parent = Library.NotificationContainer,
+        Size = UDim2.new(1, 0, 0, Scale(0)),
+        AutomaticSize = Enum.AutomaticSize.Y,
         BackgroundTransparency = 0.05,
         BorderSizePixel = 0,
         ZIndex = 5000,
         Visible = false
     }, {BackgroundColor3 = "PanelBg"})
+    NotificationGui:SetAttribute("Closing", false)
 
     CreateInstance("UICorner", {Parent = NotificationGui, CornerRadius = UDim.new(0, Scale(5))})
     CreateInstance("UIStroke", {Parent = NotificationGui, Thickness = 1}, {Color = "Border"})
@@ -320,7 +361,7 @@ function Library:Notify(Message, Duration, Type)
     CreateInstance("TextLabel", {
         Parent = NotificationGui,
         BackgroundTransparency = 1,
-        Size = UDim2.new(1, Scale(-16), 1, 0),
+        Size = UDim2.new(1, Scale(-16), 0, Scale(50)),
         Position = UDim2.new(0, Scale(12), 0, 0),
         FontFace = Config.Font,
         TextSize = Scale(11),
@@ -333,16 +374,13 @@ function Library:Notify(Message, Duration, Type)
     table.insert(Library.Notifications, NotificationGui)
 
     NotificationGui.Visible = true
-    local InTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, Scale(15))})
+    local InTween = TweenService:Create(NotificationGui, CreateTween(0.2), {Size = UDim2.new(1, 0, 0, Scale(50))})
     InTween:Play()
 
     task.delay(Duration, function()
-        local OutTween = TweenService:Create(NotificationGui, CreateTween(0.3), {Position = UDim2.new(0.5, 0, 0, Scale(-80)), BackgroundTransparency = 1})
-        OutTween:Play()
-        OutTween.Completed:Wait()
-        NotificationGui:Destroy()
-        local idx = table.find(Library.Notifications, NotificationGui)
-        if idx then table.remove(Library.Notifications, idx) end
+        pcall(function()
+            dismissNotification(NotificationGui)
+        end)
     end)
 end
 
@@ -565,6 +603,7 @@ function Library:Window(TitleOrIcon, WindowScale)
     -- Window controls logic
     local IsMinimized = false
     local PreMinimizeSize = nil
+    local PreMinimizePosition = nil
 
     MinimizeButton.MouseEnter:Connect(function()
         TweenService:Create(MinimizeButton, CreateTween(0.15), {BackgroundColor3 = Config.Colors.ElementBg, TextColor3 = Config.Colors.TextLight}):Play()
@@ -578,12 +617,18 @@ function Library:Window(TitleOrIcon, WindowScale)
         IsMinimized = not IsMinimized
         if IsMinimized then
             PreMinimizeSize = MainFrame.Size
+            PreMinimizePosition = MainFrame.Position
             SizeConstraint.MinSize = Vector2.new(Scale(350), Scale(40))
             Body.Visible = false
-            TweenService:Create(MainFrame, CreateTween(0.2), {Size = UDim2.new(PreMinimizeSize.X.Scale, PreMinimizeSize.X.Offset, 0, Scale(40))}):Play()
+            TabContainer.Visible = false
+            local minimizedWidth = math.max(Scale(270), Scale(220))
+            TweenService:Create(MainFrame, CreateTween(0.2), {
+                Size = UDim2.new(0, minimizedWidth, 0, Scale(40))
+            }):Play()
             MinimizeButton.Text = "+"
         else
             Body.Visible = true
+            TabContainer.Visible = true
             TweenService:Create(MainFrame, CreateTween(0.2), {Size = PreMinimizeSize or UDim2.new(0, Scale(750), 0, Scale(500))}):Play()
             task.delay(0.2, function()
                 SizeConstraint.MinSize = Vector2.new(Scale(350), Scale(250))
@@ -615,8 +660,10 @@ function Library:Window(TitleOrIcon, WindowScale)
     local TabContainer = CreateInstance("Frame", {
         Parent = TopBar,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, Scale(100), 0, 0),
-        Size = UDim2.new(1, Scale(-160), 1, 0)
+        AnchorPoint = Vector2.new(1, 0.5),
+        Position = UDim2.new(1, Scale(-76), 0.5, 0),
+        Size = UDim2.new(0, 0, 1, 0),
+        AutomaticSize = Enum.AutomaticSize.X
     })
 
     CreateInstance("UIListLayout", {
@@ -1852,7 +1899,10 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     end
                                     for _, Btn in ipairs(CellButtons) do
                                         if Btn.Item ~= Item then
-                                            TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3, BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                            TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.18, BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                            if Btn.Stroke then
+                                                TweenService:Create(Btn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                                            end
                                             if Btn.Checkmark then Btn.Checkmark.Visible = false end
                                         end
                                     end
@@ -1862,7 +1912,10 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     table.insert(Selected, Item)
                                 end
 
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.1, BackgroundColor3 = Config.Colors.Accent}):Play()
+                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.02, BackgroundColor3 = Config.Colors.SectionBg}):Play()
+                                if CellBtn.Stroke then
+                                    TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
+                                end
                                 if CellBtn.Checkmark then CellBtn.Checkmark.Visible = true end
 
                                 NotifyOnce("Selected: " .. (Item.Name or "Item"), "Success")
@@ -1870,7 +1923,10 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 local idx = table.find(Selected, Item)
                                 if idx then table.remove(Selected, idx) end
 
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.3, BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.18, BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                if CellBtn.Stroke then
+                                    TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                                end
                                 if CellBtn.Checkmark then CellBtn.Checkmark.Visible = false end
 
                                 NotifyOnce("Deselected: " .. (Item.Name or "Item"), "Info")
@@ -1888,7 +1944,7 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                             local CellBtn = CreateInstance("TextButton", {
                                 Parent = GridContainer,
-                                BackgroundTransparency = 0.3,
+                                BackgroundTransparency = 0.18,
                                 BorderSizePixel = 0,
                                 LayoutOrder = Index,
                                 AutoButtonColor = false,
@@ -1917,7 +1973,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
                                 Text = "✓",
                                 TextSize = Scale(16),
-                                TextColor3 = Config.Colors.TextLight,
+                                TextColor3 = Config.Colors.Accent,
                                 Visible = false,
                                 ZIndex = 5
                             })
@@ -1990,14 +2046,14 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                             CellBtn.MouseEnter:Connect(function()
                                 if not table.find(Selected, Item) then
-                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.15}):Play()
+                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.08}):Play()
                                     if Stroke then TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Accent}):Play() end
                                 end
                             end)
 
                             CellBtn.MouseLeave:Connect(function()
                                 if not table.find(Selected, Item) then
-                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.3}):Play()
+                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.18}):Play()
                                     if Stroke then TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Border}):Play() end
                                 end
                             end)
@@ -2117,18 +2173,40 @@ function Library:Window(TitleOrIcon, WindowScale)
                             RefreshGrid()
                         end
 
-                        function GridFunctions:SetSelected(Items)
+                        function GridFunctions:SetSelected(Items, Silent)
                             if type(Items) ~= "table" then Items = {Items} end
                             for _, Cell in ipairs(CellButtons) do
-                                UpdateSelection(Cell.Item, false, Cell)
+                                if table.find(Selected, Cell.Item) then
+                                    UpdateSelection(Cell.Item, false, Cell)
+                                else
+                                    TweenService:Create(Cell.Frame, CreateTween(0.15), {BackgroundTransparency = 0.18, BackgroundColor3 = Config.Colors.ElementBg}):Play()
+                                    if Cell.Stroke then
+                                        TweenService:Create(Cell.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                                    end
+                                    if Cell.Checkmark then Cell.Checkmark.Visible = false end
+                                end
                             end
+                            table.clear(Selected)
                             for _, Name in ipairs(Items) do
                                 for _, Cell in ipairs(CellButtons) do
                                     if Cell.Item.Name == Name or Cell.Item == Name then
-                                        UpdateSelection(Cell.Item, true, Cell)
+                                        if not table.find(Selected, Cell.Item) then
+                                            table.insert(Selected, Cell.Item)
+                                        end
+                                        TweenService:Create(Cell.Frame, CreateTween(0.15), {BackgroundTransparency = 0.02, BackgroundColor3 = Config.Colors.SectionBg}):Play()
+                                        if Cell.Stroke then
+                                            TweenService:Create(Cell.Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
+                                        end
+                                        if Cell.Checkmark then Cell.Checkmark.Visible = true end
+                                        if not Silent and OnSelect then
+                                            OnSelect(Selected, Cell.Item, true)
+                                        end
                                         break
                                     end
                                 end
+                            end
+                            if Props.Flag and Library.Flags[Props.Flag] then
+                                Library.Flags[Props.Flag].Value = Selected
                             end
                         end
 
