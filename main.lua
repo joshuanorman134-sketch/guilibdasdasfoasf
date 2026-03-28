@@ -601,10 +601,55 @@ function Library:Window(TitleOrIcon, WindowScale)
         Name = "Body"
     })
 
+    local TabContainer
+
     -- Window controls logic
     local IsMinimized = false
     local PreMinimizeSize = nil
     local PreMinimizePosition = nil
+
+    local function SetMinimizedState(Minimized)
+        IsMinimized = Minimized
+
+        if Minimized then
+            PreMinimizeSize = MainFrame.Size
+            PreMinimizePosition = MainFrame.Position
+            SizeConstraint.MinSize = Vector2.new(Scale(220), Scale(40))
+            local minimizedWidth = Scale(220)
+
+            TweenService:Create(MainFrame, CreateTween(0.2), {
+                Size = UDim2.new(0, minimizedWidth, 0, Scale(40))
+            }):Play()
+
+            task.delay(0.2, function()
+                if IsMinimized then
+                    Body.Visible = false
+                    if TabContainer then
+                        TabContainer.Visible = false
+                    end
+                end
+            end)
+
+            MinimizeButton.Text = "+"
+            return
+        end
+
+        Body.Visible = true
+        if TabContainer then
+            TabContainer.Visible = true
+        end
+
+        TweenService:Create(MainFrame, CreateTween(0.2), {
+            Size = PreMinimizeSize or UDim2.new(0, Scale(750), 0, Scale(500)),
+            Position = PreMinimizePosition or MainFrame.Position
+        }):Play()
+
+        task.delay(0.2, function()
+            SizeConstraint.MinSize = Vector2.new(Scale(350), Scale(250))
+        end)
+
+        MinimizeButton.Text = "−"
+    end
 
     MinimizeButton.MouseEnter:Connect(function()
         TweenService:Create(MinimizeButton, CreateTween(0.15), {BackgroundColor3 = Config.Colors.ElementBg, TextColor3 = Config.Colors.TextLight}):Play()
@@ -615,31 +660,7 @@ function Library:Window(TitleOrIcon, WindowScale)
     end)
 
     MinimizeButton.MouseButton1Click:Connect(function()
-        IsMinimized = not IsMinimized
-        if IsMinimized then
-            PreMinimizeSize = MainFrame.Size
-            PreMinimizePosition = MainFrame.Position
-            SizeConstraint.MinSize = Vector2.new(Scale(220), Scale(40))
-            local minimizedWidth = math.max(Scale(220), Scale(220))
-            TweenService:Create(MainFrame, CreateTween(0.2), {
-                Size = UDim2.new(0, minimizedWidth, 0, Scale(40))
-            }):Play()
-            task.delay(0.2, function()
-                if IsMinimized then
-                    Body.Visible = false
-                    TabContainer.Visible = false
-                end
-            end)
-            MinimizeButton.Text = "+"
-        else
-            Body.Visible = true
-            TabContainer.Visible = true
-            TweenService:Create(MainFrame, CreateTween(0.2), {Size = PreMinimizeSize or UDim2.new(0, Scale(750), 0, Scale(500))}):Play()
-            task.delay(0.2, function()
-                SizeConstraint.MinSize = Vector2.new(Scale(350), Scale(250))
-            end)
-            MinimizeButton.Text = "−"
-        end
+        SetMinimizedState(not IsMinimized)
     end)
 
     CloseButton.MouseEnter:Connect(function()
@@ -662,7 +683,7 @@ function Library:Window(TitleOrIcon, WindowScale)
     end)
 
     -- TabContainer
-    local TabContainer = CreateInstance("Frame", {
+    TabContainer = CreateInstance("Frame", {
         Parent = TopBar,
         BackgroundTransparency = 1,
         AnchorPoint = Vector2.new(1, 0.5),
@@ -1757,6 +1778,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local VirtualScroll = Props.VirtualScroll ~= false and #GridItems > 20 -- Enable for large lists
                         local SearchPlaceholder = Props.SearchPlaceholder or "🔍 Search..."
                         local OnSearch = Props.OnSearch
+                        local SelectionNotify = Props.SelectionNotify ~= false
 
                         local function NotifyOnce(Message, Type)
                             local Key = tostring(Message)
@@ -1923,7 +1945,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 end
                                 if CellBtn.Checkmark then CellBtn.Checkmark.Visible = true end
 
-                                NotifyOnce("Selected: " .. (Item.Name or "Item"), "Success")
+                                if SelectionNotify then
+                                    NotifyOnce("Selected: " .. (Item.Name or "Item"), "Success")
+                                end
                             else
                                 local idx = table.find(Selected, Item)
                                 if idx then table.remove(Selected, idx) end
@@ -1934,7 +1958,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 end
                                 if CellBtn.Checkmark then CellBtn.Checkmark.Visible = false end
 
-                                NotifyOnce("Deselected: " .. (Item.Name or "Item"), "Info")
+                                if SelectionNotify then
+                                    NotifyOnce("Deselected: " .. (Item.Name or "Item"), "Info")
+                                end
                             end
 
                             if not Silent and OnSelect then OnSelect(Selected, Item, IsSelected) end
