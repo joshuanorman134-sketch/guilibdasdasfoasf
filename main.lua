@@ -2093,6 +2093,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                             return CellData
                         end
 
+                        local ScrollFrame = GridFrame.Parent
+                        local UpdateVisibleCells
+
                         local function RefreshGrid()
                             -- Clear existing
                             for _, Cell in ipairs(CellButtons) do
@@ -2127,8 +2130,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         end
 
                         -- Virtual Scrolling
-                        local ScrollFrame = GridFrame.Parent
-                        local function UpdateVisibleCells()
+                        UpdateVisibleCells = function()
                             if not ScrollFrame or not ScrollFrame:IsA("ScrollingFrame") then return end
 
                             local scrollPos = ScrollFrame.CanvasPosition.Y
