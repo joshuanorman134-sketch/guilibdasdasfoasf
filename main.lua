@@ -507,7 +507,8 @@ function Library:Window(TitleOrIcon, WindowScale)
         AnchorPoint = Vector2.new(0.5, 0.5),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         Size = UDim2.new(0, Scale(750), 0, Scale(500)),
-        GroupTransparency = 0
+        GroupTransparency = 0,
+        ClipsDescendants = true
     }, {BackgroundColor3 = "PanelBg"})
 
     local SizeConstraint = CreateInstance("UISizeConstraint", {
@@ -618,13 +619,17 @@ function Library:Window(TitleOrIcon, WindowScale)
         if IsMinimized then
             PreMinimizeSize = MainFrame.Size
             PreMinimizePosition = MainFrame.Position
-            SizeConstraint.MinSize = Vector2.new(Scale(350), Scale(40))
-            Body.Visible = false
-            TabContainer.Visible = false
-            local minimizedWidth = math.max(Scale(270), Scale(220))
+            SizeConstraint.MinSize = Vector2.new(Scale(220), Scale(40))
+            local minimizedWidth = math.max(Scale(220), Scale(220))
             TweenService:Create(MainFrame, CreateTween(0.2), {
                 Size = UDim2.new(0, minimizedWidth, 0, Scale(40))
             }):Play()
+            task.delay(0.2, function()
+                if IsMinimized then
+                    Body.Visible = false
+                    TabContainer.Visible = false
+                end
+            end)
             MinimizeButton.Text = "+"
         else
             Body.Visible = true
@@ -1888,7 +1893,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             end
                         end
 
-                        local function UpdateSelection(Item, IsSelected, CellBtn)
+                        local function UpdateSelection(Item, IsSelected, CellBtn, Silent)
                             if IsSelected then
                                 if not MultiSelect then
                                     for _, sel in ipairs(Selected) do
@@ -1932,7 +1937,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 NotifyOnce("Deselected: " .. (Item.Name or "Item"), "Info")
                             end
 
-                            if OnSelect then OnSelect(Selected, Item, IsSelected) end
+                            if not Silent and OnSelect then OnSelect(Selected, Item, IsSelected) end
 
                             if Props.Flag and Library.Flags[Props.Flag] then
                                 Library.Flags[Props.Flag].Value = Selected
@@ -2177,7 +2182,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             if type(Items) ~= "table" then Items = {Items} end
                             for _, Cell in ipairs(CellButtons) do
                                 if table.find(Selected, Cell.Item) then
-                                    UpdateSelection(Cell.Item, false, Cell)
+                                    UpdateSelection(Cell.Item, false, Cell, true)
                                 else
                                     TweenService:Create(Cell.Frame, CreateTween(0.15), {BackgroundTransparency = 0.18, BackgroundColor3 = Config.Colors.ElementBg}):Play()
                                     if Cell.Stroke then
@@ -2220,7 +2225,7 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         function GridFunctions:ClearSelection()
                             for _, Cell in ipairs(CellButtons) do
-                                UpdateSelection(Cell.Item, false, Cell)
+                                UpdateSelection(Cell.Item, false, Cell, true)
                             end
                         end
 
