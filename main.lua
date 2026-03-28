@@ -526,13 +526,15 @@ function Library:Window(TitleOrIcon, WindowScale)
         Name = "TopBar",
         Parent = MainFrame,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, Scale(40))
+        Size = UDim2.new(1, 0, 0, Scale(40)),
+        ClipsDescendants = true
     }, {BackgroundColor3 = "MainBg"})
 
     MakeDraggable(TopBar, MainFrame)
 
     -- Title/Icon with fallback handling
     local IconImg = nil
+    local TitleLabel = nil
     if tostring(TitleOrIcon):find("rbxassetid") then
         IconImg = CreateInstance("ImageLabel", {
             Parent = TopBar,
@@ -554,15 +556,17 @@ function Library:Window(TitleOrIcon, WindowScale)
         checkIcon()
         IconImg:GetPropertyChangedSignal("IsLoaded"):Connect(checkIcon)        
     else
-        CreateInstance("TextLabel", {
+        TitleLabel = CreateInstance("TextLabel", {
             Parent = TopBar,
             BackgroundTransparency = 1,
             Position = UDim2.new(0, Scale(16), 0, 0),
-            Size = UDim2.new(0, Scale(200), 1, 0),
+            Size = UDim2.new(1, Scale(-96), 1, 0),
             FontFace = Config.Font,
             Text = tostring(TitleOrIcon or "Library"),
             TextSize = Scale(16),
-            TextXAlignment = Enum.TextXAlignment.Left
+            TextXAlignment = Enum.TextXAlignment.Left,
+            TextTruncate = Enum.TextTruncate.AtEnd,
+            ClipsDescendants = true
         }, {TextColor3 = "Accent"})
     end
 
@@ -627,6 +631,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                     if TabContainer then
                         TabContainer.Visible = false
                     end
+                    if TitleLabel then
+                        TitleLabel.Size = UDim2.new(1, Scale(-78), 1, 0)
+                    end
                 end
             end)
 
@@ -637,6 +644,9 @@ function Library:Window(TitleOrIcon, WindowScale)
         Body.Visible = true
         if TabContainer then
             TabContainer.Visible = true
+        end
+        if TitleLabel then
+            TitleLabel.Size = UDim2.new(1, Scale(-96), 1, 0)
         end
 
         TweenService:Create(MainFrame, CreateTween(0.2), {
