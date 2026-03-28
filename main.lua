@@ -506,11 +506,14 @@ function Library:Window(TitleOrIcon, WindowScale)
         }, {ImageColor3 = "Accent"})
 
         -- Fallback for failed image load
-        IconImg.Loaded:Connect(function()
-            if IconImg.ImageRectSize == Vector2.zero and IconImg.Image ~= Config.FallbackTabIcon then
+        local function checkIcon()
+            if IconImg.Image ~= Config.FallbackTabIcon and IconImg.IsLoaded and IconImg.ImageRectSize == Vector2.zero then
                 IconImg.Image = Config.FallbackTabIcon
             end
-        end)
+        end
+        
+        checkIcon()
+        IconImg:GetPropertyChangedSignal("IsLoaded"):Connect(checkIcon)        
     else
         CreateInstance("TextLabel", {
             Parent = TopBar,
@@ -734,11 +737,14 @@ function Library:Window(TitleOrIcon, WindowScale)
         }, {ImageColor3 = "TextMain"})
 
         -- Fallback handling for tab icons
-        IconImg.Loaded:Connect(function()
-            if IconImg.ImageRectSize == Vector2.zero and IconImg.Image ~= Config.FallbackTabIcon then
+        local function checkIcon()
+            if IconImg.Image ~= Config.FallbackTabIcon and IconImg.IsLoaded and IconImg.ImageRectSize == Vector2.zero then
                 IconImg.Image = Config.FallbackTabIcon
             end
-        end)
+        end
+        
+        checkIcon()
+        IconImg:GetPropertyChangedSignal("IsLoaded"):Connect(checkIcon)        
 
         table.insert(AllTabs, TabButton)
 
