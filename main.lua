@@ -689,27 +689,44 @@ function Library:Confirm(Title, Message, Callback, Options)
     Options = Options or {}
     local Buttons = Options.Buttons or {{Text = "No", Color = Config.Colors.ElementBg, Result = false}, {Text = "Yes", Color = Config.Colors.Accent, Result = true}}
 
-    local Dialog = CreateInstance("Frame", {
+    local Backdrop = CreateInstance("TextButton", {
+        Parent = Library.MainFrame,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.5,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+        ZIndex = 9999
+    })
+
+    local Dialog = CreateInstance("CanvasGroup", {
         Parent = Library.MainFrame,
         Size = UDim2.new(0, Scale(280), 0, Scale(130)),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 0,
         BorderSizePixel = 0,
+        GroupTransparency = 0,
         ZIndex = 10000
     }, {BackgroundColor3 = "PanelBg"})
 
     CreateInstance("UICorner", {Parent = Dialog, CornerRadius = UDim.new(0, Scale(6))})
     CreateInstance("UIStroke", {Parent = Dialog, Thickness = 1}, {Color = "Accent"})
 
-    local Backdrop = CreateInstance("Frame", {
-        Parent = Library.MainFrame,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = Color3.new(0, 0, 0),
-        BackgroundTransparency = 0.5,
-        BorderSizePixel = 0,
-        ZIndex = 9999
-    })
+    local function CloseDialog(Result)
+        TweenService:Create(Dialog, CreateTween(0.2), {GroupTransparency = 1}):Play()
+        TweenService:Create(Backdrop, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
+        task.wait(0.2)
+        if Dialog.Parent then Dialog:Destroy() end
+        if Backdrop.Parent then Backdrop:Destroy() end
+        if Library.ActivePopup and Library.ActivePopup.Element == Dialog then
+            Library.ActivePopup = nil
+        end
+        if Result ~= nil and Callback then
+            Callback(Result)
+        end
+    end
 
     CreateInstance("TextLabel", {
         Parent = Dialog,
@@ -773,27 +790,19 @@ function Library:Confirm(Title, Message, Callback, Options)
         end)
 
         Btn.MouseButton1Click:Connect(function()
-            TweenService:Create(Dialog, CreateTween(0.2), {GroupTransparency = 1}):Play()
-            TweenService:Create(Backdrop, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
-            task.wait(0.2)
-            Dialog:Destroy()
-            Backdrop:Destroy()
-            if Library.ActivePopup and Library.ActivePopup.Element == Dialog then
-                Library.ActivePopup = nil
-            end
-            if Callback then Callback(BtnData.Result) end
+            CloseDialog(BtnData.Result)
         end)
     end
+
+    Backdrop.MouseButton1Click:Connect(function()
+        CloseDialog(false)
+    end)
 
     RegisterPopup({
         Element = Dialog,
         Ignore = {Dialog},
         Close = function()
-            TweenService:Create(Dialog, CreateTween(0.2), {GroupTransparency = 1}):Play()
-            TweenService:Create(Backdrop, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
-            task.wait(0.2)
-            if Dialog.Parent then Dialog:Destroy() end
-            if Backdrop.Parent then Backdrop:Destroy() end
+            CloseDialog(nil)
         end
     })
 
@@ -4714,27 +4723,30 @@ end
 
 function Library:CreateModal(Title, Content, Options)
     Options = Options or {}
-    local Modal = CreateInstance("Frame", {
+    local Backdrop = CreateInstance("TextButton", {
+        Parent = Library.MainFrame,
+        Size = UDim2.new(1, 0, 1, 0),
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.6,
+        BorderSizePixel = 0,
+        Text = "",
+        AutoButtonColor = false,
+        ZIndex = 14999
+    })
+
+    local Modal = CreateInstance("CanvasGroup", {
         Parent = Library.MainFrame,
         Size = UDim2.new(0, Scale(400), 0, Scale(300)),
         Position = UDim2.new(0.5, 0, 0.5, 0),
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundTransparency = 0,
         BorderSizePixel = 0,
+        GroupTransparency = 0,
         ZIndex = 15000
     }, {BackgroundColor3 = "PanelBg"})
 
     CreateInstance("UICorner", {Parent = Modal, CornerRadius = UDim.new(0, Scale(8))})
     CreateInstance("UIStroke", {Parent = Modal, Thickness = 1}, {Color = "Accent"})
-
-    local Backdrop = CreateInstance("Frame", {
-        Parent = Library.MainFrame,
-        Size = UDim2.new(1, 0, 1, 0),
-        BackgroundColor3 = Color3.new(0, 0, 0),
-        BackgroundTransparency = 0.6,
-        BorderSizePixel = 0,
-        ZIndex = 14999
-    })
 
     -- Modal Header
     local Header = CreateInstance("Frame", {
