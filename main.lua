@@ -26,6 +26,8 @@ Library.ViewportCache = {}
 Library.NotificationContainer = nil
 Library.MainFrameUIScale = nil
 Library.MainFrameBuildScale = 1
+Library.TooltipFrame = nil
+Library.ConfigProfiles = {}
 
 -- Configuration
 local Config = {
@@ -72,6 +74,206 @@ end
 
 local function Scale(Value)
     return math.floor(Value * Library.Scale)
+end
+
+local function GetConfigBaseName(Name)
+    local BaseName = tostring(Name or Library.ConfigName or "SeraphConfig")
+    return BaseName:gsub("%.json$", "")
+end
+
+local function GetConfigFilePath(Name)
+    return GetConfigBaseName(Name) .. ".json"
+end
+
+local function CreateTooltipFrame()
+    if Library.TooltipFrame and Library.TooltipFrame.Parent then
+        return Library.TooltipFrame
+    end
+
+    local Tooltip = CreateInstance("TextLabel", {
+        Parent = Library.MainFrame and Library.MainFrame.Parent or nil,
+        BackgroundTransparency = 0,
+        AutomaticSize = Enum.AutomaticSize.XY,
+        Visible = false,
+        AnchorPoint = Vector2.new(0, 1),
+        ZIndex = 20000,
+        FontFace = Config.Font,
+        TextSize = Scale(10),
+        TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top
+    }, {BackgroundColor3 = "PanelBg", TextColor3 = "TextLight"})
+
+    CreateInstance("UICorner", {Parent = Tooltip, CornerRadius = UDim.new(0, Scale(4))})
+    CreateInstance("UIStroke", {Parent = Tooltip, Thickness = 1}, {Color = "Border"})
+    CreateInstance("UIPadding", {
+        Parent = Tooltip,
+        PaddingTop = UDim.new(0, Scale(6)),
+        PaddingBottom = UDim.new(0, Scale(6)),
+        PaddingLeft = UDim.new(0, Scale(8)),
+        PaddingRight = UDim.new(0, Scale(8))
+    })
+
+    Library.TooltipFrame = Tooltip
+    return Tooltip
+end
+
+local function ShowTooltip(Text)
+    if not Text or Text == "" or not Library.MainFrame or not Library.MainFrame.Parent then
+        return
+    end
+
+    local Tooltip = CreateTooltipFrame()
+    Tooltip.Parent = Library.MainFrame.Parent
+    Tooltip.Text = tostring(Text)
+    Tooltip.Size = UDim2.fromOffset(0, 0)
+    Tooltip.Visible = true
+
+    local MousePos = UserInputService:GetMouseLocation()
+    local MaxWidth = math.max(Scale(140), math.floor(Library.MainFrame.AbsoluteSize.X * 0.4))
+    Tooltip.Size = UDim2.fromOffset(MaxWidth, 0)
+
+    local AbsoluteSize = Tooltip.AbsoluteSize
+    local X = MousePos.X + Scale(12)
+    local Y = MousePos.Y - Scale(8)
+    local ScreenSize = Library.MainFrame.Parent.AbsoluteSize
+
+    if X + AbsoluteSize.X > ScreenSize.X - Scale(8) then
+        X = ScreenSize.X - AbsoluteSize.X - Scale(8)
+    end
+    if Y - AbsoluteSize.Y < Scale(8) then
+        Y = MousePos.Y + AbsoluteSize.Y
+        Tooltip.AnchorPoint = Vector2.new(0, 0)
+    else
+        Tooltip.AnchorPoint = Vector2.new(0, 1)
+    end
+
+    Tooltip.Position = UDim2.fromOffset(X, Y)
+end
+
+local function HideTooltip()
+    if Library.TooltipFrame then
+        Library.TooltipFrame.Visible = false
+    end
+end
+
+local function SetGuiInteractable(Gui, Enabled)
+    if not Gui then
+        return
+    end
+
+    if Gui:IsA("GuiButton") then
+        Gui.Active = Enabled
+        Gui.AutoButtonColor = false
+    elseif Gui:IsA("TextBox") then
+        Gui.Active = Enabled
+        Gui.TextEditable = Enabled
+    else
+        Gui.Active = Enabled
+    end
+end
+
+local function AttachControlStateApi(Control, Options)
+    local Root = Options.Root
+    local Interactive = Options.Interactive or {}
+    local TextTargets = Options.TextTargets or {}
+    local TooltipTargets = Options.TooltipTargets or Interactive
+    local ManualDisabled = false
+    local Loading = false
+    local TooltipText = Options.Tooltip
+    local LoadingText = Options.LoadingText or "Loading..."
+    local OriginalText = {}
+
+    if Root and #TooltipTargets == 0 then
+        TooltipTargets = {Root}
+    end
+
+    local function ApplyState()
+        local Blocked = ManualDisabled or Loading
+        if Options.SetDisabledState then
+            Options.SetDisabledState(Blocked, ManualDisabled, Loading)
+        end
+        for _, Gui in ipairs(Interactive) do
+            SetGuiInteractable(Gui, not Blocked)
+        end
+    end
+
+                        local function BindTooltip()
+        for _, Target in ipairs(TooltipTargets) do
+            if Target and Target.Parent then
+                if Target.MouseEnter then
+                    Target.MouseEnter:Connect(function()
+                        if TooltipText and TooltipText ~= "" then
+                            ShowTooltip(TooltipText)
+                        end
+                    end)
+                end
+                if Target.MouseLeave then
+                    Target.MouseLeave:Connect(HideTooltip)
+                end
+                if Target.InputChanged then
+                    Target.InputChanged:Connect(function(Input)
+                        if Input.UserInputType == Enum.UserInputType.MouseMovement and TooltipText and TooltipText ~= "" then
+                            ShowTooltip(TooltipText)
+                        end
+                    end)
+                end
+            end
+        end
+    end
+
+    function Control:SetVisible(Visible)
+        if Root then
+            Root.Visible = Visible
+        end
+    end
+
+    function Control:GetVisible()
+        return Root and Root.Visible or false
+    end
+
+    function Control:SetDisabled(Disabled)
+        ManualDisabled = Disabled and true or false
+        ApplyState()
+    end
+
+    function Control:IsDisabled()
+        return ManualDisabled or Loading
+    end
+
+    function Control:SetTooltip(Text)
+        TooltipText = Text
+    end
+
+    function Control:GetTooltip()
+        return TooltipText
+    end
+
+    function Control:SetLoading(IsLoading, OverrideText)
+        local WasLoading = Loading
+        Loading = IsLoading and true or false
+        for _, Target in ipairs(TextTargets) do
+            if Target and Target.Parent then
+                if Loading then
+                    if not WasLoading then
+                        OriginalText[Target] = Target.Text
+                    end
+                    Target.Text = OverrideText or LoadingText
+                elseif WasLoading and OriginalText[Target] ~= nil then
+                    Target.Text = OriginalText[Target]
+                end
+            end
+        end
+        ApplyState()
+    end
+
+    function Control:IsLoading()
+        return Loading
+    end
+
+    BindTooltip()
+    ApplyState()
+    return Control
 end
 
 local function GetBindText(Bind)
@@ -125,11 +327,59 @@ end
 -- Config System with Serialization Support
 function Library:EnableConfig(Name)
     Library.ConfigEnabled = true
-    Library.ConfigName = Name or "SeraphConfig"
+    Library.ConfigName = GetConfigBaseName(Name)
 end
 
-function Library:SaveConfig(Silent)
+function Library:GetConfigProfiles()
+    local Profiles = {}
+    local Seen = {}
+
+    local function AddProfile(Name)
+        local CleanName = GetConfigBaseName(Name)
+        if CleanName ~= "" and not Seen[CleanName] then
+            Seen[CleanName] = true
+            table.insert(Profiles, CleanName)
+        end
+    end
+
+    AddProfile(Library.ConfigName)
+
+    if listfiles then
+        local Success, Files = pcall(function()
+            return listfiles(".")
+        end)
+
+        if Success and type(Files) == "table" then
+            for _, Path in ipairs(Files) do
+                local FileName = tostring(Path):match("[^/\\]+$") or tostring(Path)
+                local BaseName = FileName:match("^(.*)%.json$")
+                if BaseName then
+                    AddProfile(BaseName)
+                end
+            end
+        end
+    end
+
+    table.sort(Profiles)
+    Library.ConfigProfiles = Profiles
+    return Profiles
+end
+
+function Library:SaveConfig(NameOrSilent, MaybeSilent)
     if not Library.ConfigEnabled then return end
+
+    local ProfileName = nil
+    local Silent = false
+    if type(NameOrSilent) == "boolean" then
+        Silent = NameOrSilent
+    else
+        ProfileName = NameOrSilent
+        Silent = MaybeSilent and true or false
+    end
+
+    if ProfileName then
+        Library.ConfigName = GetConfigBaseName(ProfileName)
+    end
 
     local Data = {}
     for Flag, Func in pairs(Library.Flags) do
@@ -146,18 +396,31 @@ function Library:SaveConfig(Silent)
     end
 
     local Encoded = HttpService:JSONEncode(Data)
-    writefile(Library.ConfigName .. ".json", Encoded)
+    writefile(GetConfigFilePath(Library.ConfigName), Encoded)
     if not Silent then
-        Library:Notify("Configuration saved", 2, "Success")
+        Library:Notify("Configuration saved: " .. Library.ConfigName, 2, "Success")
     end
 end
 
-function Library:LoadConfig(Silent)
+function Library:LoadConfig(NameOrSilent, MaybeSilent)
     if not Library.ConfigEnabled then return end
 
-    if isfile(Library.ConfigName .. ".json") then
+    local ProfileName = nil
+    local Silent = false
+    if type(NameOrSilent) == "boolean" then
+        Silent = NameOrSilent
+    else
+        ProfileName = NameOrSilent
+        Silent = MaybeSilent and true or false
+    end
+
+    if ProfileName then
+        Library.ConfigName = GetConfigBaseName(ProfileName)
+    end
+
+    if isfile(GetConfigFilePath(Library.ConfigName)) then
         local Success, Decoded = pcall(function()
-            return HttpService:JSONDecode(readfile(Library.ConfigName .. ".json"))
+            return HttpService:JSONDecode(readfile(GetConfigFilePath(Library.ConfigName)))
         end)
 
         if Success and Decoded then
@@ -171,9 +434,28 @@ function Library:LoadConfig(Silent)
                 end
             end
             if not Silent then
-                Library:Notify("Configuration loaded", 2, "Success")
+                Library:Notify("Configuration loaded: " .. Library.ConfigName, 2, "Success")
             end
         end
+    elseif not Silent then
+        Library:Notify("Missing config: " .. Library.ConfigName, 2, "Warning")
+    end
+end
+
+function Library:DeleteConfig(Name, Silent)
+    if not Library.ConfigEnabled then
+        return
+    end
+
+    local ProfileName = GetConfigBaseName(Name)
+    local Path = GetConfigFilePath(ProfileName)
+    if isfile(Path) then
+        delfile(Path)
+        if not Silent then
+            Library:Notify("Configuration deleted: " .. ProfileName, 2, "Success")
+        end
+    elseif not Silent then
+        Library:Notify("Missing config: " .. ProfileName, 2, "Warning")
     end
 end
 
@@ -1226,6 +1508,691 @@ function Library:Window(TitleOrIcon, WindowScale)
                         return Container
                     end
 
+                    function SectionFunctions:Row(Props)
+                        Props = Props or {}
+                        local RowFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = Props.BackgroundTransparency or 1,
+                            Size = Props.Size or UDim2.new(1, 0, 0, Props.Height or Scale(26)),
+                            AutomaticSize = Props.AutomaticSize or Enum.AutomaticSize.None,
+                            BorderSizePixel = 0
+                        })
+
+                        if Props.BackgroundColor then
+                            RowFrame.BackgroundColor3 = Props.BackgroundColor
+                        end
+
+                        if Props.CornerRadius then
+                            CreateInstance("UICorner", {Parent = RowFrame, CornerRadius = UDim.new(0, Props.CornerRadius)})
+                        end
+
+                        if Props.Border then
+                            CreateInstance("UIStroke", {
+                                Parent = RowFrame,
+                                Thickness = Props.Border.Thickness or 1,
+                                Color = Props.Border.Color or Config.Colors.Border
+                            })
+                        end
+
+                        CreateInstance("UIListLayout", {
+                            Parent = RowFrame,
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            VerticalAlignment = Props.VerticalAlignment or Enum.VerticalAlignment.Center,
+                            HorizontalAlignment = Props.HorizontalAlignment or Enum.HorizontalAlignment.Left,
+                            Padding = UDim.new(0, Props.Padding or Scale(6))
+                        })
+
+                        if Props.PaddingX or Props.PaddingY then
+                            CreateInstance("UIPadding", {
+                                Parent = RowFrame,
+                                PaddingTop = UDim.new(0, Props.PaddingY or 0),
+                                PaddingBottom = UDim.new(0, Props.PaddingY or 0),
+                                PaddingLeft = UDim.new(0, Props.PaddingX or 0),
+                                PaddingRight = UDim.new(0, Props.PaddingX or 0)
+                            })
+                        end
+
+                        local RowFunctions = {}
+
+                        function RowFunctions:GetContainer()
+                            return RowFrame
+                        end
+
+                        function RowFunctions:Add(ItemProps)
+                            ItemProps = ItemProps or {}
+                            local Item = CreateInstance(ItemProps.ClassName or "Frame", {
+                                Parent = RowFrame,
+                                BackgroundTransparency = ItemProps.BackgroundTransparency or 1,
+                                Size = ItemProps.Size or UDim2.new(0, ItemProps.Width or Scale(80), 1, 0),
+                                AutomaticSize = ItemProps.AutomaticSize or Enum.AutomaticSize.None,
+                                BorderSizePixel = 0
+                            })
+
+                            if ItemProps.BackgroundColor then
+                                Item.BackgroundColor3 = ItemProps.BackgroundColor
+                            end
+
+                            if ItemProps.Text and (Item:IsA("TextLabel") or Item:IsA("TextButton") or Item:IsA("TextBox")) then
+                                Item.Text = ItemProps.Text
+                            end
+
+                            return Item
+                        end
+
+                        function RowFunctions:AddSpacer(Width)
+                            return CreateInstance("Frame", {
+                                Parent = RowFrame,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(0, Width or Scale(8), 1, 0),
+                                BorderSizePixel = 0
+                            })
+                        end
+
+                        function RowFunctions:SetVisible(Visible)
+                            RowFrame.Visible = Visible
+                        end
+
+                        AttachControlStateApi(RowFunctions, {
+                            Root = RowFrame,
+                            Tooltip = Props.Tooltip
+                        })
+                        return RowFunctions
+                    end
+
+                    function SectionFunctions:Columns(Props)
+                        Props = Props or {}
+                        local Count = math.max(1, Props.Count or 2)
+                        local ColumnsFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Props.Height or Scale(120)),
+                            AutomaticSize = Props.AutomaticSize or Enum.AutomaticSize.None,
+                            BorderSizePixel = 0
+                        })
+
+                        CreateInstance("UIListLayout", {
+                            Parent = ColumnsFrame,
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            Padding = UDim.new(0, Props.Padding or Scale(8))
+                        })
+
+                        local ColumnFrames = {}
+                        local WidthOffset = -(((Count - 1) * (Props.Padding or Scale(8))) / Count)
+                        for Index = 1, Count do
+                            local Column = CreateInstance("Frame", {
+                                Parent = ColumnsFrame,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(1 / Count, WidthOffset, 1, 0),
+                                AutomaticSize = Enum.AutomaticSize.Y,
+                                BorderSizePixel = 0
+                            })
+                            CreateInstance("UIListLayout", {
+                                Parent = Column,
+                                Padding = UDim.new(0, Props.ColumnPadding or Scale(6))
+                            })
+                            table.insert(ColumnFrames, Column)
+                        end
+
+                        local ColumnFunctions = {}
+
+                        function ColumnFunctions:GetColumn(Index)
+                            return ColumnFrames[Index]
+                        end
+
+                        function ColumnFunctions:AddToColumn(Index, Properties)
+                            local Target = ColumnFrames[Index]
+                            if not Target then
+                                return nil
+                            end
+
+                            Properties = Properties or {}
+                            local Container = CreateInstance("Frame", {
+                                Parent = Target,
+                                BackgroundTransparency = Properties.BackgroundTransparency or 1,
+                                Size = Properties.Size or UDim2.new(1, 0, 0, Properties.Height or Scale(24)),
+                                AutomaticSize = Properties.AutomaticSize or Enum.AutomaticSize.None,
+                                BorderSizePixel = 0
+                            })
+
+                            if Properties.BackgroundColor then
+                                Container.BackgroundColor3 = Properties.BackgroundColor
+                            end
+
+                            if Properties.CornerRadius then
+                                CreateInstance("UICorner", {Parent = Container, CornerRadius = UDim.new(0, Properties.CornerRadius)})
+                            end
+
+                            if Properties.Border then
+                                CreateInstance("UIStroke", {
+                                    Parent = Container,
+                                    Thickness = Properties.Border.Thickness or 1,
+                                    Color = Properties.Border.Color or Config.Colors.Border
+                                })
+                            end
+
+                            return Container
+                        end
+
+                        AttachControlStateApi(ColumnFunctions, {
+                            Root = ColumnsFrame,
+                            Tooltip = Props.Tooltip
+                        })
+                        return ColumnFunctions
+                    end
+
+                    function SectionFunctions:Stat(Props)
+                        Props = Props or {}
+                        local StatFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BorderSizePixel = 0,
+                            Size = Props.Size or UDim2.new(1, 0, 0, Props.Height or Scale(44))
+                        }, {BackgroundColor3 = "ElementBg"})
+
+                        CreateInstance("UICorner", {Parent = StatFrame, CornerRadius = UDim.new(0, Scale(5))})
+                        CreateInstance("UIStroke", {Parent = StatFrame, Thickness = 1}, {Color = "Border"})
+                        CreateInstance("UIPadding", {
+                            Parent = StatFrame,
+                            PaddingTop = UDim.new(0, Scale(6)),
+                            PaddingBottom = UDim.new(0, Scale(6)),
+                            PaddingLeft = UDim.new(0, Scale(8)),
+                            PaddingRight = UDim.new(0, Scale(8))
+                        })
+
+                        local Row = CreateInstance("Frame", {
+                            Parent = StatFrame,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 1, 0),
+                            BorderSizePixel = 0
+                        })
+
+                        CreateInstance("UIListLayout", {
+                            Parent = Row,
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            VerticalAlignment = Enum.VerticalAlignment.Center,
+                            Padding = UDim.new(0, Scale(8))
+                        })
+
+                        if Props.Icon then
+                            CreateInstance("ImageLabel", {
+                                Parent = Row,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(0, Scale(18), 0, Scale(18)),
+                                Image = Props.Icon
+                            }, {ImageColor3 = "TextLight"})
+                        end
+
+                        local TextWrap = CreateInstance("Frame", {
+                            Parent = Row,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, Props.RightText and Scale(-60) or 0, 1, 0),
+                            BorderSizePixel = 0
+                        })
+
+                        local TitleLabel = CreateInstance("TextLabel", {
+                            Parent = TextWrap,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(14)),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            FontFace = Config.Font,
+                            TextSize = Scale(10),
+                            Text = Props.Title or "Stat"
+                        }, {TextColor3 = "TextMain"})
+
+                        local ValueLabel = CreateInstance("TextLabel", {
+                            Parent = TextWrap,
+                            BackgroundTransparency = 1,
+                            Position = UDim2.new(0, 0, 0, Scale(14)),
+                            Size = UDim2.new(1, 0, 0, Scale(18)),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold),
+                            TextSize = Scale(13),
+                            Text = tostring(Props.Value or "0")
+                        }, {TextColor3 = "TextLight"})
+
+                        local RightLabel = nil
+                        if Props.RightText then
+                            RightLabel = CreateInstance("TextLabel", {
+                                Parent = Row,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(0, Scale(56), 1, 0),
+                                FontFace = Config.Font,
+                                TextSize = Scale(10),
+                                TextXAlignment = Enum.TextXAlignment.Right,
+                                Text = Props.RightText
+                            }, {TextColor3 = "TextMain"})
+                        end
+
+                        local StatFunctions = {}
+                        function StatFunctions:SetValue(Value)
+                            ValueLabel.Text = tostring(Value)
+                        end
+                        function StatFunctions:GetValue()
+                            return ValueLabel.Text
+                        end
+                        function StatFunctions:SetTitle(Value)
+                            TitleLabel.Text = tostring(Value)
+                        end
+                        function StatFunctions:SetRightText(Value)
+                            if RightLabel then
+                                RightLabel.Text = tostring(Value)
+                            end
+                        end
+
+                        AttachControlStateApi(StatFunctions, {
+                            Root = StatFrame,
+                            TextTargets = {ValueLabel},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = StatFunctions
+                        end
+                        return StatFunctions
+                    end
+
+                    function SectionFunctions:List(Props)
+                        Props = Props or {}
+                        local Items = Props.Items or {}
+                        local SelectedIndex = nil
+                        local RowHeight = Props.RowHeight or Scale(34)
+
+                        local ListFrame = CreateInstance("Frame", {
+                            Parent = Props.Parent or ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Position = Props.Position or UDim2.new(0, 0, 0, 0),
+                            Size = UDim2.new(1, 0, 0, Props.Height or Scale(160)),
+                            BorderSizePixel = 0
+                        })
+
+                        if Props.Title then
+                            local TitleLabel = CreateInstance("TextLabel", {
+                                Parent = ListFrame,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(1, 0, 0, Scale(16)),
+                                FontFace = Config.Font,
+                                TextSize = Scale(11),
+                                TextXAlignment = Enum.TextXAlignment.Left,
+                                Text = Props.Title
+                            }, {TextColor3 = "TextMain"})
+                            TitleLabel.Name = "ListTitle"
+                        end
+
+                        local ListScroll = CreateInstance("ScrollingFrame", {
+                            Parent = ListFrame,
+                            BackgroundTransparency = 0,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, Props.Title and Scale(18) or 0),
+                            Size = UDim2.new(1, 0, 1, Props.Title and Scale(-18) or 0),
+                            CanvasSize = UDim2.new(0, 0, 0, 0),
+                            ScrollBarThickness = 2,
+                            AutomaticCanvasSize = Enum.AutomaticSize.Y
+                        }, {BackgroundColor3 = "ElementBg", ScrollBarImageColor3 = "Border"})
+
+                        CreateInstance("UICorner", {Parent = ListScroll, CornerRadius = UDim.new(0, Scale(5))})
+                        CreateInstance("UIStroke", {Parent = ListScroll, Thickness = 1}, {Color = "Border"})
+
+                        local ListContent = CreateInstance("Frame", {
+                            Parent = ListScroll,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, Scale(-4), 0, 0),
+                            Position = UDim2.new(0, Scale(2), 0, Scale(2)),
+                            AutomaticSize = Enum.AutomaticSize.Y,
+                            BorderSizePixel = 0
+                        })
+
+                        CreateInstance("UIListLayout", {
+                            Parent = ListContent,
+                            Padding = UDim.new(0, Scale(4))
+                        })
+
+                        local EmptyLabel = CreateInstance("TextLabel", {
+                            Parent = ListContent,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(24)),
+                            FontFace = Config.Font,
+                            TextSize = Scale(10),
+                            Text = Props.EmptyText or "No items",
+                            Visible = false
+                        }, {TextColor3 = "TextMain"})
+
+                        local RowRefs = {}
+                        local ListFunctions = {}
+
+                        local function GetItemTitle(Item)
+                            if type(Item) == "table" then
+                                return tostring(Item.Title or Item.Name or Item.Value or "Item")
+                            end
+                            return tostring(Item)
+                        end
+
+                        local function GetItemDescription(Item)
+                            if type(Item) == "table" then
+                                return tostring(Item.Description or "")
+                            end
+                            return ""
+                        end
+
+                        local function GetItemRight(Item)
+                            if type(Item) == "table" then
+                                return tostring(Item.RightText or Item.Right or "")
+                            end
+                            return ""
+                        end
+
+                        local function ApplySelection()
+                            for Index, Row in ipairs(RowRefs) do
+                                local IsSelected = Index == SelectedIndex
+                                TweenService:Create(Row.Button, CreateTween(0.15), {
+                                    BackgroundColor3 = IsSelected and Config.Colors.SectionBg or Config.Colors.ElementBg
+                                }):Play()
+                                TweenService:Create(Row.Stroke, CreateTween(0.15), {
+                                    Color = IsSelected and Config.Colors.Accent or Config.Colors.Border
+                                }):Play()
+                            end
+                        end
+
+                        local function Rebuild()
+                            for _, Row in ipairs(RowRefs) do
+                                Row.Button:Destroy()
+                            end
+                            table.clear(RowRefs)
+
+                            EmptyLabel.Visible = #Items == 0
+                            if #Items == 0 then
+                                return
+                            end
+
+                            for Index, Item in ipairs(Items) do
+                                local Button = CreateInstance("TextButton", {
+                                    Parent = ListContent,
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(1, 0, 0, RowHeight),
+                                    AutoButtonColor = false,
+                                    Text = ""
+                                }, {BackgroundColor3 = "ElementBg"})
+
+                                CreateInstance("UICorner", {Parent = Button, CornerRadius = UDim.new(0, Scale(4))})
+                                local Stroke = CreateInstance("UIStroke", {Parent = Button, Thickness = 1}, {Color = "Border"})
+
+                                local TitleLabel = CreateInstance("TextLabel", {
+                                    Parent = Button,
+                                    BackgroundTransparency = 1,
+                                    Position = UDim2.new(0, Scale(8), 0, Scale(5)),
+                                    Size = UDim2.new(1, Scale(-72), 0, Scale(12)),
+                                    FontFace = Config.Font,
+                                    TextSize = Scale(11),
+                                    TextXAlignment = Enum.TextXAlignment.Left,
+                                    Text = GetItemTitle(Item)
+                                }, {TextColor3 = "TextLight"})
+
+                                local DescriptionLabel = CreateInstance("TextLabel", {
+                                    Parent = Button,
+                                    BackgroundTransparency = 1,
+                                    Position = UDim2.new(0, Scale(8), 0, Scale(18)),
+                                    Size = UDim2.new(1, Scale(-72), 0, Scale(11)),
+                                    FontFace = Config.Font,
+                                    TextSize = Scale(9),
+                                    TextXAlignment = Enum.TextXAlignment.Left,
+                                    Text = GetItemDescription(Item),
+                                    Visible = GetItemDescription(Item) ~= ""
+                                }, {TextColor3 = "TextMain"})
+
+                                local RightLabel = CreateInstance("TextLabel", {
+                                    Parent = Button,
+                                    BackgroundTransparency = 1,
+                                    Position = UDim2.new(1, Scale(-64), 0, 0),
+                                    Size = UDim2.new(0, Scale(56), 1, 0),
+                                    FontFace = Config.Font,
+                                    TextSize = Scale(10),
+                                    TextXAlignment = Enum.TextXAlignment.Right,
+                                    Text = GetItemRight(Item)
+                                }, {TextColor3 = "TextMain"})
+
+                                Button.MouseEnter:Connect(function()
+                                    if SelectedIndex ~= Index then
+                                        TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
+                                    end
+                                end)
+                                Button.MouseLeave:Connect(function()
+                                    if SelectedIndex ~= Index then
+                                        TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                                    end
+                                end)
+                                Button.MouseButton1Click:Connect(function()
+                                    SelectedIndex = Index
+                                    ApplySelection()
+                                    if Props.Callback then
+                                        Props.Callback(Item, Index)
+                                    end
+                                end)
+
+                                table.insert(RowRefs, {
+                                    Button = Button,
+                                    Stroke = Stroke,
+                                    Item = Item,
+                                    Title = TitleLabel,
+                                    Description = DescriptionLabel,
+                                    Right = RightLabel
+                                })
+                            end
+
+                            ApplySelection()
+                        end
+
+                        function ListFunctions:SetItems(NewItems)
+                            Items = NewItems or {}
+                            if SelectedIndex and SelectedIndex > #Items then
+                                SelectedIndex = nil
+                            end
+                            Rebuild()
+                        end
+
+                        function ListFunctions:AddItem(Item)
+                            table.insert(Items, Item)
+                            Rebuild()
+                        end
+
+                        function ListFunctions:Clear()
+                            Items = {}
+                            SelectedIndex = nil
+                            Rebuild()
+                        end
+
+                        function ListFunctions:SetValue(Index)
+                            SelectedIndex = Index
+                            ApplySelection()
+                        end
+
+                        function ListFunctions:GetValue()
+                            return SelectedIndex and Items[SelectedIndex] or nil
+                        end
+
+                        function ListFunctions:GetItems()
+                            return Items
+                        end
+
+                        Rebuild()
+
+                        AttachControlStateApi(ListFunctions, {
+                            Root = ListFrame,
+                            Interactive = {ListScroll},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = ListFunctions
+                        end
+                        return ListFunctions
+                    end
+
+                    function SectionFunctions:ConfigManager(Props)
+                        Props = Props or {}
+                        local ManagerFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(176)),
+                            BorderSizePixel = 0
+                        })
+
+                        local Header = CreateInstance("TextLabel", {
+                            Parent = ManagerFrame,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(16)),
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Text = Props.Title or "Config Manager"
+                        }, {TextColor3 = "TextMain"})
+
+                        local InputContainer = CreateInstance("Frame", {
+                            Parent = ManagerFrame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, Scale(20)),
+                            Size = UDim2.new(1, 0, 0, Scale(24))
+                        }, {BackgroundColor3 = "ElementBg"})
+
+                        CreateInstance("UICorner", {Parent = InputContainer, CornerRadius = UDim.new(0, Scale(4))})
+                        CreateInstance("UIStroke", {Parent = InputContainer, Thickness = 1}, {Color = "Border"})
+
+                        local ProfileInput = CreateInstance("TextBox", {
+                            Parent = InputContainer,
+                            BackgroundTransparency = 1,
+                            Position = UDim2.new(0, Scale(8), 0, 0),
+                            Size = UDim2.new(1, Scale(-16), 1, 0),
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            ClearTextOnFocus = false,
+                            PlaceholderText = "Profile name",
+                            Text = Library.ConfigName
+                        }, {TextColor3 = "TextLight", PlaceholderColor3 = "TextMain"})
+
+                        local Actions = CreateInstance("Frame", {
+                            Parent = ManagerFrame,
+                            BackgroundTransparency = 1,
+                            Position = UDim2.new(0, 0, 0, Scale(50)),
+                            Size = UDim2.new(1, 0, 0, Scale(26)),
+                            BorderSizePixel = 0
+                        })
+
+                        CreateInstance("UIListLayout", {
+                            Parent = Actions,
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            Padding = UDim.new(0, Scale(6))
+                        })
+
+                        local ProfilesLabel = CreateInstance("TextLabel", {
+                            Parent = ManagerFrame,
+                            BackgroundTransparency = 1,
+                            Position = UDim2.new(0, 0, 0, Scale(82)),
+                            Size = UDim2.new(1, 0, 0, Scale(14)),
+                            FontFace = Config.Font,
+                            TextSize = Scale(10),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Text = ""
+                        }, {TextColor3 = "TextMain"})
+
+                        local ActiveLabel = CreateInstance("TextLabel", {
+                            Parent = ManagerFrame,
+                            BackgroundTransparency = 1,
+                            Position = UDim2.new(0, 0, 0, Scale(100)),
+                            Size = UDim2.new(1, 0, 0, Scale(14)),
+                            FontFace = Config.Font,
+                            TextSize = Scale(10),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Text = ""
+                        }, {TextColor3 = "TextLight"})
+
+                        local ListWidget = SectionFunctions:List({
+                            Parent = ManagerFrame,
+                            Position = UDim2.new(0, 0, 0, Scale(116)),
+                            Title = nil,
+                            Height = Scale(58),
+                            EmptyText = "No saved profiles",
+                            Items = {},
+                            Callback = function(Item)
+                                ProfileInput.Text = tostring(Item)
+                            end
+                        })
+
+                        local function GetSelectedProfile()
+                            local Raw = ProfileInput.Text ~= "" and ProfileInput.Text or Library.ConfigName
+                            return GetConfigBaseName(Raw)
+                        end
+
+                        local function RefreshProfiles()
+                            local Profiles = Library:GetConfigProfiles()
+                            ProfilesLabel.Text = "Profiles: " .. (#Profiles > 0 and table.concat(Profiles, ", ") or "None")
+                            ActiveLabel.Text = "Active: " .. Library.ConfigName
+                            ListWidget:SetItems(Profiles)
+                        end
+
+                        local function CreateActionButton(Text, Callback)
+                            local Button = CreateInstance("TextButton", {
+                                Parent = Actions,
+                                BorderSizePixel = 0,
+                                Size = UDim2.new(0.25, Scale(-5), 1, 0),
+                                FontFace = Config.Font,
+                                TextSize = Scale(10),
+                                Text = Text,
+                                AutoButtonColor = false
+                            }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
+                            CreateInstance("UICorner", {Parent = Button, CornerRadius = UDim.new(0, Scale(4))})
+                            local Stroke = CreateInstance("UIStroke", {Parent = Button, Thickness = 1}, {Color = "Border"})
+                            Button.MouseEnter:Connect(function()
+                                TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
+                            end)
+                            Button.MouseLeave:Connect(function()
+                                TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                            end)
+                            Button.MouseButton1Click:Connect(Callback)
+                            return Button
+                        end
+
+                        local Buttons = {
+                            CreateActionButton("Save", function()
+                                local Profile = GetSelectedProfile()
+                                Library:SaveConfig(Profile)
+                                RefreshProfiles()
+                            end),
+                            CreateActionButton("Load", function()
+                                local Profile = GetSelectedProfile()
+                                Library:LoadConfig(Profile)
+                                RefreshProfiles()
+                            end),
+                            CreateActionButton("Delete", function()
+                                local Profile = GetSelectedProfile()
+                                Library:DeleteConfig(Profile)
+                                RefreshProfiles()
+                            end),
+                            CreateActionButton("Refresh", RefreshProfiles)
+                        }
+
+                        RefreshProfiles()
+
+                        local ManagerFunctions = {}
+                        function ManagerFunctions:GetValue()
+                            return GetSelectedProfile()
+                        end
+                        function ManagerFunctions:SetValue(Value)
+                            ProfileInput.Text = GetConfigBaseName(Value)
+                        end
+                        function ManagerFunctions:Refresh()
+                            RefreshProfiles()
+                        end
+
+                        AttachControlStateApi(ManagerFunctions, {
+                            Root = ManagerFrame,
+                            Interactive = {ProfileInput, Buttons[1], Buttons[2], Buttons[3], Buttons[4]},
+                            TextTargets = {Buttons[1], Buttons[2], Buttons[3], Buttons[4]},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = ManagerFunctions
+                        end
+                        return ManagerFunctions
+                    end
+
                     -- BUTTON - Compact
                     function SectionFunctions:Button(Props)
                         local ButtonFrame = CreateInstance("Frame", {
@@ -1308,7 +2275,16 @@ function Library:Window(TitleOrIcon, WindowScale)
                             return ButtonsInGroup[1].Text
                         end
 
-                        return AddButton(Props)
+                        local Result = AddButton(Props)
+
+                        AttachControlStateApi(ButtonFunctions, {
+                            Root = ButtonFrame,
+                            Interactive = ButtonsInGroup,
+                            TextTargets = ButtonsInGroup,
+                            Tooltip = Props.Tooltip
+                        })
+
+                        return Result
                     end
 
                     -- LABEL - Compact
@@ -1332,6 +2308,12 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local LabelFunctions = {}
                         function LabelFunctions:SetValue(Val) Title.Text = tostring(Val) end
                         function LabelFunctions:GetValue() return Title.Text end
+
+                        AttachControlStateApi(LabelFunctions, {
+                            Root = LabelFrame,
+                            TextTargets = {Title},
+                            Tooltip = Props.Tooltip
+                        })
 
                         if Props.Flag then Library.Flags[Props.Flag] = LabelFunctions end
                         return LabelFunctions
@@ -1396,6 +2378,13 @@ function Library:Window(TitleOrIcon, WindowScale)
                             end
                         end
                         function InputFunctions:GetValue() return TextBox.Text end
+
+                        AttachControlStateApi(InputFunctions, {
+                            Root = InputFrame,
+                            Interactive = {TextBox},
+                            TextTargets = {TextBox},
+                            Tooltip = Props.Tooltip
+                        })
 
                         if Props.Flag then Library.Flags[Props.Flag] = InputFunctions end
                         return InputFunctions
@@ -1563,6 +2552,18 @@ function Library:Window(TitleOrIcon, WindowScale)
                             BuildOptions()
                         end
 
+                        AttachControlStateApi(DropdownFunctions, {
+                            Root = DropdownFrame,
+                            Interactive = {DropdownBtn},
+                            TextTargets = {DropdownBtn},
+                            Tooltip = Props.Tooltip,
+                            SetDisabledState = function(Disabled)
+                                if Disabled and MenuOpen then
+                                    CloseMenu()
+                                end
+                            end
+                        })
+
                         if Props.Flag then Library.Flags[Props.Flag] = DropdownFunctions end
                         return DropdownFunctions
                     end
@@ -1621,6 +2622,12 @@ function Library:Window(TitleOrIcon, WindowScale)
                         function ProgressFunctions:GetValue()
                             return BarFill.Size.X.Scale * 100
                         end
+
+                        AttachControlStateApi(ProgressFunctions, {
+                            Root = BarFrame,
+                            TextTargets = {PercentLabel},
+                            Tooltip = Props.Tooltip
+                        })
 
                         if Props.Default then ProgressFunctions:SetValue(Props.Default) end
                         if Props.Flag then Library.Flags[Props.Flag] = ProgressFunctions end
@@ -1685,6 +2692,13 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local ToggleFunctions = {}
                         function ToggleFunctions:SetValue(Val) UpdateState(Val) end
                         function ToggleFunctions:GetValue() return Toggled end
+
+                        AttachControlStateApi(ToggleFunctions, {
+                            Root = ToggleFrame,
+                            Interactive = {Checkbox},
+                            TextTargets = {Title},
+                            Tooltip = Props.Tooltip
+                        })
 
                         if Props.Flag then Library.Flags[Props.Flag] = ToggleFunctions end
                         return ToggleFunctions
@@ -1793,6 +2807,13 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local InitSize = math.abs(StartPercent - ZeroScale)
                         SliderFill.Position = UDim2.new(InitStart, 0, 0, 0)
                         SliderFill.Size = UDim2.new(InitSize, 0, 1, 0)
+
+                        AttachControlStateApi(SliderFunctions, {
+                            Root = SliderFrame,
+                            Interactive = {SliderBg},
+                            TextTargets = {ValueLabel},
+                            Tooltip = Props.Tooltip
+                        })
 
                         if Props.Flag then Library.Flags[Props.Flag] = SliderFunctions end
                         return SliderFunctions
@@ -2373,6 +3394,13 @@ function Library:Window(TitleOrIcon, WindowScale)
                         if Props.Flag then
                             Library.Flags[Props.Flag] = GridFlagData
                         end
+
+                        AttachControlStateApi(GridFunctions, {
+                            Root = GridFrame,
+                            Interactive = SearchBox and {SearchBox} or {},
+                            TextTargets = {EmptyState},
+                            Tooltip = Props.Tooltip
+                        })
 
                         return GridFunctions
                     end
