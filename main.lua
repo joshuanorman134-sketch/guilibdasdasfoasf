@@ -1451,12 +1451,17 @@ function Library:Window(TitleOrIcon, WindowScale)
 
     function WindowFunctions:AddTab(IconAsset)
         local RequestedIcon = Config.FallbackTabIcon
+        local FallbackLabel = ""
         if type(IconAsset) == "string" then
             RequestedIcon = IconAsset ~= "" and IconAsset or Config.FallbackTabIcon
         elseif type(IconAsset) == "table" then
-            local FirstIcon = IconAsset[1]
+            local FirstIcon = IconAsset.Icon or IconAsset[1]
             if type(FirstIcon) == "string" and FirstIcon ~= "" then
                 RequestedIcon = FirstIcon
+            end
+            local RequestedLabel = IconAsset.Label or IconAsset[2]
+            if type(RequestedLabel) == "string" then
+                FallbackLabel = RequestedLabel
             end
         end
 
@@ -1480,10 +1485,29 @@ function Library:Window(TitleOrIcon, WindowScale)
             Image = RequestedIcon
         }, {ImageColor3 = "TextMain"})
 
+        local FallbackText = CreateInstance("TextLabel", {
+            Parent = TabButton,
+            BackgroundTransparency = 1,
+            Size = UDim2.new(1, 0, 1, 0),
+            Visible = false,
+            FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold, Enum.FontStyle.Normal),
+            Text = FallbackLabel,
+            TextSize = Scale(12),
+            TextXAlignment = Enum.TextXAlignment.Center,
+            TextYAlignment = Enum.TextYAlignment.Center
+        }, {TextColor3 = "TextMain"})
+
         -- Fallback handling for tab icons
+        local function showTextFallback()
+            if FallbackLabel ~= "" then
+                IconImg.Visible = false
+                FallbackText.Visible = true
+            end
+        end
+
         local function checkIcon()
             if IconImg.Image ~= Config.FallbackTabIcon and IconImg.IsLoaded and IconImg.ImageRectSize == Vector2.zero then
-                IconImg.Image = Config.FallbackTabIcon
+                showTextFallback()
             end
         end
         
@@ -1491,7 +1515,7 @@ function Library:Window(TitleOrIcon, WindowScale)
         IconImg:GetPropertyChangedSignal("IsLoaded"):Connect(checkIcon)        
         task.delay(1, function()
             if IconImg.Parent and (not IconImg.IsLoaded or IconImg.ImageRectSize == Vector2.zero) then
-                IconImg.Image = Config.FallbackTabIcon
+                showTextFallback()
             end
         end)
 
@@ -1508,9 +1532,11 @@ function Library:Window(TitleOrIcon, WindowScale)
         table.insert(Library.DynamicUpdates, function()
             if IsThisTabActive then
                 IconImg.ImageColor3 = Config.Colors.TextLight
+                FallbackText.TextColor3 = Config.Colors.TextLight
                 TabButton.BackgroundTransparency = 0.9
             else
                 IconImg.ImageColor3 = Config.Colors.TextMain
+                FallbackText.TextColor3 = Config.Colors.TextMain
                 TabButton.BackgroundTransparency = 1
             end
         end)
@@ -1530,11 +1556,16 @@ function Library:Window(TitleOrIcon, WindowScale)
                     if InnerIcon then
                         TweenService:Create(InnerIcon, CreateTween(0.2), {ImageColor3 = Config.Colors.TextMain}):Play()
                     end
+                    local InnerText = Btn:FindFirstChild("TextLabel")
+                    if InnerText then
+                        TweenService:Create(InnerText, CreateTween(0.2), {TextColor3 = Config.Colors.TextMain}):Play()
+                    end
                 end
             end
 
             TweenService:Create(TabButton, CreateTween(0.2), {BackgroundTransparency = 0.9}):Play()
             TweenService:Create(IconImg, CreateTween(0.2), {ImageColor3 = Config.Colors.TextLight}):Play()
+            TweenService:Create(FallbackText, CreateTween(0.2), {TextColor3 = Config.Colors.TextLight}):Play()
 
             task.spawn(function()
                 IsAnimatingTab = true
@@ -3327,6 +3358,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         CreateInstance("TextLabel", {
                             Parent = DropdownFrame,
                             BackgroundTransparency = 1,
+                            LayoutOrder = 1,
                             Text = Props.Title or "Dropdown",
                             FontFace = Config.Font,
                             TextSize = Scale(11),
@@ -3337,6 +3369,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local DropdownBtn = CreateInstance("TextButton", {
                             Parent = DropdownFrame,
                             BorderSizePixel = 0,
+                            LayoutOrder = 2,
                             Size = UDim2.new(1, 0, 0, Scale(22)),
                             FontFace = Config.Font,
                             TextSize = Scale(11),
@@ -3404,6 +3437,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local OptionFrame = CreateInstance("Frame", {
                             Parent = DropdownFrame,
                             BorderSizePixel = 0,
+                            LayoutOrder = 3,
                             Size = UDim2.new(1, 0, 0, 0),
                             Visible = false,
                             ClipsDescendants = true,
