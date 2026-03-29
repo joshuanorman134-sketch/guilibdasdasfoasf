@@ -24,6 +24,8 @@ Library.MaxNotifications = 5
 Library.CustomContainers = {}
 Library.ViewportCache = {}
 Library.NotificationContainer = nil
+Library.MainFrameUIScale = nil
+Library.MainFrameBuildScale = 1
 
 -- Configuration
 local Config = {
@@ -423,7 +425,13 @@ function Library:SetAnimationSpeed(NewSpeed)
 end
 
 function Library:SetScale(NewScale)
-    Library.Scale = NewScale
+    local targetScale = tonumber(NewScale) or 1
+    Library.Scale = targetScale
+
+    if Library.MainFrameUIScale then
+        local buildScale = Library.MainFrameBuildScale or 1
+        Library.MainFrameUIScale.Scale = targetScale / buildScale
+    end
 end
 
 function Library:SetWindowKeybind(KeyCode)
@@ -491,6 +499,7 @@ end)
 -- Main Window Function with Enhanced Features
 function Library:Window(TitleOrIcon, WindowScale)
     Library.Scale = WindowScale or 1
+    Library.MainFrameBuildScale = Library.Scale
 
     local ScreenGui = CreateInstance("ScreenGui", {
         Name = "Seraph",
@@ -518,6 +527,10 @@ function Library:Window(TitleOrIcon, WindowScale)
     })
 
     Library.MainFrame = MainFrame
+    Library.MainFrameUIScale = CreateInstance("UIScale", {
+        Parent = MainFrame,
+        Scale = 1
+    })
     CreateInstance("UICorner", {Parent = MainFrame, CornerRadius = UDim.new(0, Scale(6))})
     local MainStroke = CreateInstance("UIStroke", {Parent = MainFrame, Thickness = 1, Name = "UIStroke"}, {Color = "MainBg"})
 
@@ -1378,7 +1391,15 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local DropdownFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, Scale(38))
+                            Size = UDim2.new(1, 0, 0, 0),
+                            AutomaticSize = Enum.AutomaticSize.Y,
+                            ClipsDescendants = false
+                        })
+
+                        CreateInstance("UIListLayout", {
+                            Parent = DropdownFrame,
+                            FillDirection = Enum.FillDirection.Vertical,
+                            Padding = UDim.new(0, Scale(2))
                         })
 
                         CreateInstance("TextLabel", {
@@ -1394,7 +1415,6 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local DropdownBtn = CreateInstance("TextButton", {
                             Parent = DropdownFrame,
                             BorderSizePixel = 0,
-                            Position = UDim2.new(0, 0, 0, Scale(16)),
                             Size = UDim2.new(1, 0, 0, Scale(22)),
                             FontFace = Config.Font,
                             TextSize = Scale(11),
@@ -1422,7 +1442,6 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local OptionFrame = CreateInstance("Frame", {
                             Parent = DropdownFrame,
                             BorderSizePixel = 0,
-                            Position = UDim2.new(0, 0, 0, Scale(40)),
                             Size = UDim2.new(1, 0, 0, 0),
                             Visible = false,
                             ZIndex = 100
@@ -1925,6 +1944,29 @@ function Library:Window(TitleOrIcon, WindowScale)
                             end
                         end
 
+                        local function ApplySelectionVisualState(CellBtn, IsSelected)
+                            if not CellBtn or not CellBtn.Frame then return end
+
+                            local backgroundTransparency = IsSelected and 0.02 or 0.18
+                            local backgroundColor = IsSelected and Config.Colors.SectionBg or Config.Colors.ElementBg
+                            local strokeColor = IsSelected and Config.Colors.Accent or Config.Colors.Border
+
+                            TweenService:Create(CellBtn.Frame, CreateTween(0.15), {
+                                BackgroundTransparency = backgroundTransparency,
+                                BackgroundColor3 = backgroundColor
+                            }):Play()
+
+                            if CellBtn.Stroke then
+                                TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {
+                                    Color = strokeColor
+                                }):Play()
+                            end
+
+                            if CellBtn.Checkmark then
+                                CellBtn.Checkmark.Visible = IsSelected
+                            end
+                        end
+
                         local function UpdateSelection(Item, IsSelected, CellBtn, Silent)
                             if IsSelected then
                                 if not MultiSelect then
@@ -1936,11 +1978,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     end
                                     for _, Btn in ipairs(CellButtons) do
                                         if Btn.Item ~= Item then
-                                            TweenService:Create(Btn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.18, BackgroundColor3 = Config.Colors.ElementBg}):Play()
-                                            if Btn.Stroke then
-                                                TweenService:Create(Btn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                                            end
-                                            if Btn.Checkmark then Btn.Checkmark.Visible = false end
+                                            ApplySelectionVisualState(Btn, false)
                                         end
                                     end
                                 end
@@ -1949,11 +1987,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     table.insert(Selected, Item)
                                 end
 
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.02, BackgroundColor3 = Config.Colors.SectionBg}):Play()
-                                if CellBtn.Stroke then
-                                    TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
-                                end
-                                if CellBtn.Checkmark then CellBtn.Checkmark.Visible = true end
+                                ApplySelectionVisualState(CellBtn, true)
 
                                 if SelectionNotify then
                                     NotifyOnce("Selected: " .. (Item.Name or "Item"), "Success")
@@ -1962,11 +1996,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 local idx = table.find(Selected, Item)
                                 if idx then table.remove(Selected, idx) end
 
-                                TweenService:Create(CellBtn.Frame, CreateTween(0.15), {BackgroundTransparency = 0.18, BackgroundColor3 = Config.Colors.ElementBg}):Play()
-                                if CellBtn.Stroke then
-                                    TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                                end
-                                if CellBtn.Checkmark then CellBtn.Checkmark.Visible = false end
+                                ApplySelectionVisualState(CellBtn, false)
 
                                 if SelectionNotify then
                                     NotifyOnce("Deselected: " .. (Item.Name or "Item"), "Info")
@@ -2120,6 +2150,14 @@ function Library:Window(TitleOrIcon, WindowScale)
                             }
                             table.insert(CellButtons, CellData)
 
+                            if table.find(Selected, Item) then
+                                task.defer(function()
+                                    if CellBtn and CellBtn.Parent then
+                                        ApplySelectionVisualState(CellData, true)
+                                    end
+                                end)
+                            end
+
                             if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
                                 task.defer(function()
                                     UpdateSelection(Item, true, CellData)
@@ -2222,11 +2260,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 if table.find(Selected, Cell.Item) then
                                     UpdateSelection(Cell.Item, false, Cell, true)
                                 else
-                                    TweenService:Create(Cell.Frame, CreateTween(0.15), {BackgroundTransparency = 0.18, BackgroundColor3 = Config.Colors.ElementBg}):Play()
-                                    if Cell.Stroke then
-                                        TweenService:Create(Cell.Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                                    end
-                                    if Cell.Checkmark then Cell.Checkmark.Visible = false end
+                                    ApplySelectionVisualState(Cell, false)
                                 end
                             end
                             table.clear(Selected)
@@ -2236,11 +2270,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                         if not table.find(Selected, Cell.Item) then
                                             table.insert(Selected, Cell.Item)
                                         end
-                                        TweenService:Create(Cell.Frame, CreateTween(0.15), {BackgroundTransparency = 0.02, BackgroundColor3 = Config.Colors.SectionBg}):Play()
-                                        if Cell.Stroke then
-                                            TweenService:Create(Cell.Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
-                                        end
-                                        if Cell.Checkmark then Cell.Checkmark.Visible = true end
+                                        ApplySelectionVisualState(Cell, true)
                                         if not Silent and OnSelect then
                                             OnSelect(Selected, Cell.Item, true)
                                         end
