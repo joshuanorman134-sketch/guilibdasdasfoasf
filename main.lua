@@ -33,13 +33,6 @@ Library.NotificationSettings = {
     Position = "top_center",
     Width = 320
 }
-Library.CompactMode = false
-Library.HeaderStatus = {
-    Text = "Ready",
-    Color = "Success"
-}
-Library.HeaderRefs = {}
-Library.LayoutRefs = {}
 Library.ConfigRules = {
     SaveDefaults = true,
     Include = nil,
@@ -106,45 +99,6 @@ end
 
 local function Scale(Value)
     return math.floor(Value * Library.Scale)
-end
-
-local function GetAccentTint(BaseColor, Amount)
-    return BaseColor:Lerp(Config.Colors.Accent, math.clamp(Amount or 0, 0, 1))
-end
-
-local function ResolveThemeColor(Value, Fallback)
-    if type(Value) == "string" and Config.Colors[Value] then
-        return Config.Colors[Value]
-    end
-    if typeof(Value) == "Color3" then
-        return Value
-    end
-    if type(Fallback) == "string" and Config.Colors[Fallback] then
-        return Config.Colors[Fallback]
-    end
-    if typeof(Fallback) == "Color3" then
-        return Fallback
-    end
-    return Config.Colors.TextMain
-end
-
-local function UpdateHeaderMeta()
-    local HeaderRefs = Library.HeaderRefs
-    if HeaderRefs.ProfileLabel then
-        if Library.ConfigEnabled then
-            HeaderRefs.ProfileLabel.Text = "Profile: " .. tostring(Library.ConfigName)
-        else
-            HeaderRefs.ProfileLabel.Text = "Profile: Session"
-        end
-    end
-
-    if HeaderRefs.StatusLabel then
-        HeaderRefs.StatusLabel.Text = tostring(Library.HeaderStatus.Text or "Ready")
-    end
-
-    if HeaderRefs.StatusDot then
-        HeaderRefs.StatusDot.BackgroundColor3 = ResolveThemeColor(Library.HeaderStatus.Color, "Success")
-    end
 end
 
 local function ApplyNotificationContainerLayout()
@@ -692,7 +646,6 @@ function Library:EnableConfig(Name)
     else
         Library.ConfigName = GetConfigBaseName(Name)
     end
-    UpdateHeaderMeta()
 end
 
 function Library:ConfigurePersistence(Options)
@@ -788,7 +741,6 @@ function Library:SaveConfig(NameOrSilent, MaybeSilent)
 
     local Encoded = HttpService:JSONEncode(Data)
     writefile(GetConfigFilePath(Library.ConfigName), Encoded)
-    UpdateHeaderMeta()
     if not Silent then
         Library:Notify("Configuration saved: " .. Library.ConfigName, 2, "Success")
     end
@@ -830,7 +782,6 @@ function Library:LoadConfig(NameOrSilent, MaybeSilent)
                     end
                 end
             end
-            UpdateHeaderMeta()
             if not Silent then
                 Library:Notify("Configuration loaded: " .. Library.ConfigName, 2, "Success")
             end
@@ -1124,7 +1075,6 @@ function Library:SetTheme(NewColors)
     for _, Func in Library.DynamicUpdates do
         Func()
     end
-    UpdateHeaderMeta()
 end
 
 function Library:GetTheme()
@@ -1149,26 +1099,6 @@ function Library:SetScale(NewScale)
     end
 end
 
-function Library:SetCompactMode(Enabled)
-    Library.CompactMode = Enabled and true or false
-
-    local Refs = Library.LayoutRefs
-    local SidebarLayout = Refs.SidebarLayout
-    local SectionLayout = Refs.SectionLayout
-
-    if SidebarLayout then
-        SidebarLayout.Padding = UDim.new(0, Scale(Library.CompactMode and 4 or 6))
-    end
-
-    if SectionLayout then
-        SectionLayout.Padding = UDim.new(0, Scale(Library.CompactMode and 4 or 6))
-    end
-end
-
-function Library:GetCompactMode()
-    return Library.CompactMode
-end
-
 function Library:SetWindowKeybind(KeyCode)
     Library.WindowKeybind = KeyCode
 end
@@ -1186,12 +1116,6 @@ function Library:SetNotificationOptions(Options)
         Library.NotificationSettings.Width = tonumber(Options.Width) or Library.NotificationSettings.Width
     end
     ApplyNotificationContainerLayout()
-end
-
-function Library:SetHeaderStatus(Text, Color)
-    Library.HeaderStatus.Text = tostring(Text or "Ready")
-    Library.HeaderStatus.Color = Color or "Success"
-    UpdateHeaderMeta()
 end
 
 -- Input Handling
@@ -1338,72 +1262,6 @@ function Library:Window(TitleOrIcon, WindowScale)
         }, {TextColor3 = "Accent"})
     end
 
-    local HeaderMetaFrame = CreateInstance("Frame", {
-        Parent = TopBar,
-        BackgroundTransparency = 1,
-        Position = UDim2.new(0, TitleLabel and Scale(16) or Scale(44), 0, Scale(25)),
-        Size = UDim2.new(1, Scale(-180), 0, Scale(14)),
-        BorderSizePixel = 0
-    })
-
-    CreateInstance("UIListLayout", {
-        Parent = HeaderMetaFrame,
-        FillDirection = Enum.FillDirection.Horizontal,
-        VerticalAlignment = Enum.VerticalAlignment.Center,
-        Padding = UDim.new(0, Scale(8))
-    })
-
-    local ProfileLabel = CreateInstance("TextLabel", {
-        Parent = HeaderMetaFrame,
-        BackgroundTransparency = 1,
-        AutomaticSize = Enum.AutomaticSize.X,
-        Size = UDim2.new(0, 0, 1, 0),
-        FontFace = Config.Font,
-        TextSize = Scale(10),
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Text = "Profile: Session"
-    }, {TextColor3 = "TextMain"})
-
-    local StatusWrap = CreateInstance("Frame", {
-        Parent = HeaderMetaFrame,
-        BackgroundTransparency = 1,
-        AutomaticSize = Enum.AutomaticSize.X,
-        Size = UDim2.new(0, 0, 1, 0),
-        BorderSizePixel = 0
-    })
-
-    CreateInstance("UIListLayout", {
-        Parent = StatusWrap,
-        FillDirection = Enum.FillDirection.Horizontal,
-        VerticalAlignment = Enum.VerticalAlignment.Center,
-        Padding = UDim.new(0, Scale(5))
-    })
-
-    local StatusDot = CreateInstance("Frame", {
-        Parent = StatusWrap,
-        Size = UDim2.new(0, Scale(6), 0, Scale(6)),
-        BorderSizePixel = 0
-    }, {BackgroundColor3 = "Success"})
-    CreateInstance("UICorner", {Parent = StatusDot, CornerRadius = UDim.new(1, 0)})
-
-    local StatusLabel = CreateInstance("TextLabel", {
-        Parent = StatusWrap,
-        BackgroundTransparency = 1,
-        AutomaticSize = Enum.AutomaticSize.X,
-        Size = UDim2.new(0, 0, 1, 0),
-        FontFace = Config.Font,
-        TextSize = Scale(10),
-        TextXAlignment = Enum.TextXAlignment.Left,
-        Text = "Ready"
-    }, {TextColor3 = "TextMain"})
-
-    Library.HeaderRefs = {
-        ProfileLabel = ProfileLabel,
-        StatusDot = StatusDot,
-        StatusLabel = StatusLabel
-    }
-    UpdateHeaderMeta()
-
     -- Window Controls
     local MinimizeButton = CreateInstance("TextButton", {
         Parent = TopBar,
@@ -1468,7 +1326,6 @@ function Library:Window(TitleOrIcon, WindowScale)
                     if TitleLabel then
                         TitleLabel.Size = UDim2.new(1, Scale(-78), 1, 0)
                     end
-                    HeaderMetaFrame.Visible = false
                 end
             end)
 
@@ -1483,8 +1340,6 @@ function Library:Window(TitleOrIcon, WindowScale)
         if TitleLabel then
             TitleLabel.Size = UDim2.new(1, Scale(-96), 1, 0)
         end
-        HeaderMetaFrame.Visible = true
-
         TweenService:Create(MainFrame, CreateTween(0.2), {
             Size = PreMinimizeSize or UDim2.new(0, Scale(750), 0, Scale(500)),
             Position = PreMinimizePosition or MainFrame.Position
@@ -1582,7 +1437,7 @@ function Library:Window(TitleOrIcon, WindowScale)
         CanvasSize = UDim2.new(0,0,0,0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y
     })
-    local SidebarLayout = CreateInstance("UIListLayout", {Parent = SidebarList, Padding = UDim.new(0, Scale(6))})
+    CreateInstance("UIListLayout", {Parent = SidebarList, Padding = UDim.new(0, Scale(6))})
 
     -- Content Area
     local ContentArea = CreateInstance("Frame", {
@@ -1611,13 +1466,7 @@ function Library:Window(TitleOrIcon, WindowScale)
         CanvasSize = UDim2.new(0,0,0,0),
         AutomaticCanvasSize = Enum.AutomaticSize.Y
     }, {ScrollBarImageColor3 = "Border"})
-    local SectionLayout = CreateInstance("UIListLayout", {Parent = SectionContainer, Padding = UDim.new(0, Scale(6))})
-
-    Library.LayoutRefs = {
-        SidebarLayout = SidebarLayout,
-        SectionLayout = SectionLayout
-    }
-    Library:SetCompactMode(Library.CompactMode)
+    CreateInstance("UIListLayout", {Parent = SectionContainer, Padding = UDim.new(0, Scale(6))})
 
     local ContentFadeOverlay = CreateInstance("Frame", {
         Parent = ContentArea,
@@ -1732,13 +1581,11 @@ function Library:Window(TitleOrIcon, WindowScale)
             if IsThisTabActive then
                 IconImg.ImageColor3 = Config.Colors.TextLight
                 FallbackText.TextColor3 = Config.Colors.TextLight
-                TabButton.BackgroundTransparency = 0
-                TabButton.BackgroundColor3 = GetAccentTint(Config.Colors.PanelBg, 0.28)
+                TabButton.BackgroundTransparency = 0.9
             else
                 IconImg.ImageColor3 = Config.Colors.TextMain
                 FallbackText.TextColor3 = Config.Colors.TextMain
                 TabButton.BackgroundTransparency = 1
-                TabButton.BackgroundColor3 = Config.Colors.PanelBg
             end
         end)
 
@@ -1753,7 +1600,6 @@ function Library:Window(TitleOrIcon, WindowScale)
             for _, Btn in ipairs(AllTabs) do
                 if Btn:IsA("ImageButton") then
                     TweenService:Create(Btn, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
-                    TweenService:Create(Btn, CreateTween(0.2), {BackgroundColor3 = Config.Colors.PanelBg}):Play()
                     local InnerIcon = Btn:FindFirstChild("ImageLabel")
                     if InnerIcon then
                         TweenService:Create(InnerIcon, CreateTween(0.2), {ImageColor3 = Config.Colors.TextMain}):Play()
@@ -1765,10 +1611,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                 end
             end
 
-            TweenService:Create(TabButton, CreateTween(0.2), {
-                BackgroundTransparency = 0,
-                BackgroundColor3 = GetAccentTint(Config.Colors.PanelBg, 0.28)
-            }):Play()
+            TweenService:Create(TabButton, CreateTween(0.2), {BackgroundTransparency = 0.9}):Play()
             TweenService:Create(IconImg, CreateTween(0.2), {ImageColor3 = Config.Colors.TextLight}):Play()
             TweenService:Create(FallbackText, CreateTween(0.2), {TextColor3 = Config.Colors.TextLight}):Play()
 
@@ -1814,8 +1657,7 @@ function Library:Window(TitleOrIcon, WindowScale)
         if FirstTab then
             FirstTab = false
             IconImg.ImageColor3 = Config.Colors.TextLight
-            TabButton.BackgroundTransparency = 0
-            TabButton.BackgroundColor3 = GetAccentTint(Config.Colors.PanelBg, 0.28)
+            TabButton.BackgroundTransparency = 0.9
         end
 
         function TabFunctions:Select()
@@ -1924,13 +1766,12 @@ function Library:Window(TitleOrIcon, WindowScale)
                 table.insert(Library.DynamicUpdates, function()
                     if SubState.bIsActive then
                         SubButton.TextColor3 = Config.Colors.TextLight
-                        SubButton.BackgroundTransparency = 0
-                        SubButton.BackgroundColor3 = GetAccentTint(Config.Colors.SectionBg, 0.32)
+                        SubButton.BackgroundTransparency = 0.9
+                        SubButton.BackgroundColor3 = Color3.new(1,1,1)
                         ActiveBorder.Visible = true
                     else
                         SubButton.TextColor3 = Config.Colors.TextMain
                         SubButton.BackgroundTransparency = 1
-                        SubButton.BackgroundColor3 = Config.Colors.SectionBg
                         ActiveBorder.Visible = false
                     end
                 end)
@@ -1954,8 +1795,8 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                     SubState.bIsActive = true
                     TweenService:Create(SubButton, CreateTween(0.2), {
-                        BackgroundTransparency = 0,
-                        BackgroundColor3 = GetAccentTint(Config.Colors.SectionBg, 0.32),
+                        BackgroundTransparency = 0.9,
+                        BackgroundColor3 = Color3.new(1,1,1),
                         TextColor3 = Config.Colors.TextLight
                     }):Play()
                     ActiveBorder.Visible = true
@@ -4600,7 +4441,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             if not CellBtn or not CellBtn.Frame then return end
 
                             local backgroundTransparency = IsSelected and 0.02 or 0.18
-                            local backgroundColor = IsSelected and GetAccentTint(Config.Colors.ElementBg, 0.18) or Config.Colors.ElementBg
+                            local backgroundColor = IsSelected and Config.Colors.SectionBg or Config.Colors.ElementBg
                             local strokeColor = IsSelected and Config.Colors.Accent or Config.Colors.Border
 
                             TweenService:Create(CellBtn.Frame, CreateTween(0.15), {
