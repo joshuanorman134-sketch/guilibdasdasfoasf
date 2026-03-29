@@ -721,11 +721,21 @@ function Library:Notify(Message, Duration, Type)
     local function dismissNotification(notificationGui)
         if not notificationGui or notificationGui:GetAttribute("Closing") then return end
         notificationGui:SetAttribute("Closing", true)
+        notificationGui.ClipsDescendants = true
+
+        local stroke = notificationGui:FindFirstChildOfClass("UIStroke")
+        local accentBar = notificationGui:FindFirstChildOfClass("Frame")
 
         local outTween = TweenService:Create(notificationGui, CreateTween(0.2), {
             Size = UDim2.new(1, 0, 0, 0),
             BackgroundTransparency = 1
         })
+        if stroke then
+            TweenService:Create(stroke, CreateTween(0.2), {Transparency = 1}):Play()
+        end
+        if accentBar then
+            TweenService:Create(accentBar, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
+        end
         outTween:Play()
         outTween.Completed:Wait()
 
@@ -757,7 +767,8 @@ function Library:Notify(Message, Duration, Type)
         BackgroundTransparency = 0.05,
         BorderSizePixel = 0,
         ZIndex = 5000,
-        Visible = false
+        Visible = false,
+        ClipsDescendants = true
     }, {BackgroundColor3 = "PanelBg"})
     NotificationGui:SetAttribute("Closing", false)
 
@@ -3360,10 +3371,39 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                     -- SLIDER - Compact
                     function SectionFunctions:Slider(Props)
+                        local Step = tonumber(Props.Step)
+                        if Step and Step <= 0 then
+                            Step = nil
+                        end
+
+                        local function CountDecimals(Value)
+                            local Text = string.format("%.10f", tonumber(Value) or 0)
+                            local Trimmed = Text:gsub("0+$", "")
+                            local DecimalsText = Trimmed:match("%.(%d+)")
+                            return DecimalsText and #DecimalsText or 0
+                        end
+
+                        local Decimals = Props.Decimal
+                        if Decimals == nil then
+                            Decimals = Step and CountDecimals(Step) or 0
+                        end
+
+                        local Mult = 10 ^ Decimals
+                        local Format = "%." .. Decimals .. "f"
+                        local Prefix = Props.Prefix or ""
+                        local Suffix = Props.Suffix or ""
+                        local ZeroValue = Props.ZeroValue or Props.Min
+                        local Range = Props.Max - Props.Min
+                        local ZeroScale = Range ~= 0 and ((ZeroValue - Props.Min) / Range) or 0
+
+                        local Presets = type(Props.Presets) == "table" and Props.Presets or nil
+                        local HasPresets = Presets and #Presets > 0
+                        local SliderFrameHeight = HasPresets and Scale(64) or Scale(38)
+
                         local SliderFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, Scale(38))
+                            Size = UDim2.new(1, 0, 0, SliderFrameHeight)
                         })
 
                         CreateInstance("TextLabel", {
@@ -3406,26 +3446,85 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         CreateInstance("UICorner", {Parent = SliderFill, CornerRadius = UDim.new(0, Scale(2))})
 
+                        local ShowStops = Props.ShowStops
+                        if ShowStops == nil then
+                            ShowStops = Step ~= nil
+                        end
+
+                        if ShowStops and Step and Range > 0 then
+                            local StopCount = math.floor((Range / Step) + 0.5)
+                            if StopCount >= 1 and StopCount <= 24 then
+                                local StopContainer = CreateInstance("Frame", {
+                                    Parent = SliderBg,
+                                    BackgroundTransparency = 1,
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(1, 0, 1, 0),
+                                    Active = false,
+                                    ZIndex = SliderBg.ZIndex + 1
+                                })
+
+                                for Index = 0, StopCount do
+                                    local PositionScale = StopCount > 0 and (Index / StopCount) or 0
+                                    CreateInstance("Frame", {
+                                        Parent = StopContainer,
+                                        AnchorPoint = Vector2.new(0.5, 0.5),
+                                        BackgroundColor3 = Config.Colors.Border,
+                                        BackgroundTransparency = 0.35,
+                                        BorderSizePixel = 0,
+                                        Position = UDim2.new(PositionScale, 0, 0.5, 0),
+                                        Size = UDim2.new(0, 1, 0, Scale(8)),
+                                        ZIndex = StopContainer.ZIndex
+                                    })
+                                end
+                            end
+                        end
+
                         local SliderFunctions = {}
-                        local Decimals = Props.Decimal or 0
-                        local Mult = 10 ^ Decimals
-                        local Format = "%." .. Decimals .. "f"
-                        local Prefix = Props.Prefix or ""
-                        local Suffix = Props.Suffix or ""
+                        local CurrentValue
+                        local PresetButtons = {}
+                        local InteractiveTargets = {SliderBg}
 
-                        local ZeroValue = Props.ZeroValue or Props.Min
-                        local CurrentValue = Props.Default or ZeroValue
-                        local ZeroScale = (ZeroValue - Props.Min) / (Props.Max - Props.Min)
+                        local function SnapValue(Val)
+                            local Numeric = tonumber(Val) or ZeroValue
+                            local Clamped = math.clamp(Numeric, Props.Min, Props.Max)
+                            if Step then
+                                local Relative = (Clamped - Props.Min) / Step
+                                Clamped = Props.Min + (math.floor(Relative + 0.5) * Step)
+                                Clamped = math.clamp(Clamped, Props.Min, Props.Max)
+                            end
+                            return math.floor(Clamped * Mult + 0.5) / Mult
+                        end
 
-                        ValueLabel.Text = Prefix .. string.format(Format, CurrentValue) .. Suffix
+                        local function FormatValue(Value)
+                            return Prefix .. string.format(Format, Value) .. Suffix
+                        end
+
+                        local function UpdatePresetVisuals()
+                            if #PresetButtons == 0 then
+                                return
+                            end
+
+                            local MatchTolerance = Step and math.max(Step / 2, 1 / Mult) or (0.5 / Mult)
+                            for _, PresetButton in ipairs(PresetButtons) do
+                                local IsActive = math.abs(PresetButton.Value - CurrentValue) <= MatchTolerance
+                                TweenService:Create(PresetButton.Button, CreateTween(0.12), {
+                                    BackgroundColor3 = IsActive and Config.Colors.Accent or Config.Colors.ElementBg,
+                                    BackgroundTransparency = IsActive and 0.1 or 0,
+                                    TextColor3 = IsActive and Config.Colors.TextLight or Config.Colors.TextMain
+                                }):Play()
+                            end
+                        end
+
+                        CurrentValue = SnapValue(Props.Default or ZeroValue)
+
+                        ValueLabel.Text = FormatValue(CurrentValue)
 
                         SliderBg.InputBegan:Connect(function(Input)
                             if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
                                 local function Update(InputVec)
                                     local Pos = math.clamp((InputVec.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
-                                    local Raw = (Pos * (Props.Max - Props.Min)) + Props.Min
-                                    local Val = math.floor(Raw * Mult + 0.5) / Mult
-                                    SliderFunctions:SetValue(Val)
+                                    local Raw = (Pos * Range) + Props.Min
+                                    SliderFunctions:SetValue(Raw)
                                 end
                                 Update(Input.Position)
                                 local MoveCon = UserInputService.InputChanged:Connect(function(Move)
@@ -3442,16 +3541,90 @@ function Library:Window(TitleOrIcon, WindowScale)
                             end
                         end)
 
+                        if HasPresets then
+                            local PresetRow = CreateInstance("Frame", {
+                                Parent = SliderFrame,
+                                BackgroundTransparency = 1,
+                                BorderSizePixel = 0,
+                                Position = UDim2.new(0, 0, 0, Scale(30)),
+                                Size = UDim2.new(1, 0, 0, Scale(24))
+                            })
+
+                            CreateInstance("UIListLayout", {
+                                Parent = PresetRow,
+                                FillDirection = Enum.FillDirection.Horizontal,
+                                HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                                VerticalAlignment = Enum.VerticalAlignment.Center,
+                                Padding = UDim.new(0, Scale(6))
+                            })
+
+                            local function NormalizePreset(Preset)
+                                if type(Preset) == "table" then
+                                    local Value = tonumber(Preset.Value or Preset[2] or Preset[1])
+                                    if Value == nil then
+                                        return nil
+                                    end
+                                    local Label = Preset.Label
+                                    if Label == nil or Label == "" then
+                                        Label = FormatValue(SnapValue(Value))
+                                    end
+                                    return Label, Value
+                                end
+
+                                local Value = tonumber(Preset)
+                                if Value == nil then
+                                    return nil
+                                end
+                                return FormatValue(SnapValue(Value)), Value
+                            end
+
+                            for _, Preset in ipairs(Presets) do
+                                local LabelText, PresetValue = NormalizePreset(Preset)
+                                if LabelText and PresetValue ~= nil then
+                                    local PresetButton = CreateInstance("TextButton", {
+                                        Parent = PresetRow,
+                                        AutomaticSize = Enum.AutomaticSize.X,
+                                        BackgroundTransparency = 0,
+                                        BorderSizePixel = 0,
+                                        Size = UDim2.new(0, 0, 0, Scale(20)),
+                                        Text = tostring(LabelText),
+                                        FontFace = Config.Font,
+                                        TextSize = Scale(10),
+                                        AutoButtonColor = false
+                                    }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
+
+                                    CreateInstance("UICorner", {Parent = PresetButton, CornerRadius = UDim.new(0, Scale(10))})
+                                    CreateInstance("UIStroke", {Parent = PresetButton, Thickness = 1}, {Color = "Border"})
+                                    CreateInstance("UIPadding", {
+                                        Parent = PresetButton,
+                                        PaddingLeft = UDim.new(0, Scale(8)),
+                                        PaddingRight = UDim.new(0, Scale(8))
+                                    })
+
+                                    PresetButton.MouseButton1Click:Connect(function()
+                                        SliderFunctions:SetValue(PresetValue)
+                                    end)
+
+                                    table.insert(InteractiveTargets, PresetButton)
+                                    table.insert(PresetButtons, {
+                                        Button = PresetButton,
+                                        Value = SnapValue(PresetValue)
+                                    })
+                                end
+                            end
+                        end
+
                         function SliderFunctions:SetValue(Val)
-                            CurrentValue = math.clamp(math.floor(Val * Mult + 0.5) / Mult, Props.Min, Props.Max)
-                            local Pos = (CurrentValue - Props.Min) / (Props.Max - Props.Min)
+                            CurrentValue = SnapValue(Val)
+                            local Pos = Range ~= 0 and ((CurrentValue - Props.Min) / Range) or 0
                             local StartScale = math.min(ZeroScale, Pos)
                             local FillSize = math.abs(Pos - ZeroScale)
                             TweenService:Create(SliderFill, CreateTween(0.08), {
                                 Position = UDim2.new(StartScale, 0, 0, 0),
                                 Size = UDim2.new(FillSize, 0, 1, 0)
                             }):Play()
-                            ValueLabel.Text = Prefix .. string.format(Format, CurrentValue) .. Suffix
+                            ValueLabel.Text = FormatValue(CurrentValue)
+                            UpdatePresetVisuals()
                             if Props.Callback then Props.Callback(CurrentValue) end
                         end
 
@@ -3459,15 +3632,16 @@ function Library:Window(TitleOrIcon, WindowScale)
                         SliderFunctions.DefaultValue = Props.Default or ZeroValue
                         SliderFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
 
-                        local StartPercent = (CurrentValue - Props.Min) / (Props.Max - Props.Min)
+                        local StartPercent = Range ~= 0 and ((CurrentValue - Props.Min) / Range) or 0
                         local InitStart = math.min(ZeroScale, StartPercent)
                         local InitSize = math.abs(StartPercent - ZeroScale)
                         SliderFill.Position = UDim2.new(InitStart, 0, 0, 0)
                         SliderFill.Size = UDim2.new(InitSize, 0, 1, 0)
+                        UpdatePresetVisuals()
 
                         AttachControlStateApi(SliderFunctions, {
                             Root = SliderFrame,
-                            Interactive = {SliderBg},
+                            Interactive = InteractiveTargets,
                             TextTargets = {ValueLabel},
                             Tooltip = Props.Tooltip
                         })
@@ -3485,10 +3659,11 @@ function Library:Window(TitleOrIcon, WindowScale)
                     function SectionFunctions:SearchableGrid(Props)
                         local GridItems = Props.Items or {}
                         local Selected = {}
+                        local SelectedKeys = {}
                         local Favorites = {}
                         local MultiSelect = Props.Multi ~= false
-                        local MinColumns = Props.MinColumns or 4
-                        local MaxColumns = Props.MaxColumns or 8
+                        local PreferredColumns = Props.Columns or Props.PreferredColumns or Props.MinColumns or 4
+                        local MaxColumns = Props.MaxColumns or PreferredColumns
                         local MinCellWidth = Props.MinCellWidth or Scale(140)
                         local CellHeight = Props.CellHeight or Scale(70)
                         local SearchFilter = ""
@@ -3591,6 +3766,22 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local CellButtons = {}
                         local VisibleCells = {} -- For virtual scrolling
 
+                        local function GetItemKey(Item)
+                            if type(Item) == "table" then
+                                return tostring(Item.Name or Item.Id or Item.Value or "")
+                            end
+                            return tostring(Item)
+                        end
+
+                        local function SyncSelectedList()
+                            table.clear(Selected)
+                            for _, Item in ipairs(GridItems) do
+                                if SelectedKeys[GetItemKey(Item)] then
+                                    table.insert(Selected, Item)
+                                end
+                            end
+                        end
+
                         local function CalculateCellSize(ItemCount)
                             local ContainerWidth = math.floor(GridContainer.AbsoluteSize.X + 0.5)
                             if ContainerWidth <= 0 then
@@ -3598,14 +3789,14 @@ function Library:Window(TitleOrIcon, WindowScale)
                             end
 
                             local VisibleCount = math.max(1, ItemCount or #GridItems)
-                            local Columns = MinColumns
-                            for Candidate = math.min(MaxColumns, VisibleCount), MinColumns, -1 do
-                                local TotalPadding = (Candidate - 1) * GridPadding
-                                local CandidateWidth = (ContainerWidth - TotalPadding) / Candidate
+                            local Columns = math.min(math.max(1, PreferredColumns), math.max(1, VisibleCount), math.max(1, MaxColumns))
+                            while Columns > 1 do
+                                local TotalPadding = (Columns - 1) * GridPadding
+                                local CandidateWidth = (ContainerWidth - TotalPadding) / Columns
                                 if CandidateWidth >= MinCellWidth then
-                                    Columns = Candidate
                                     break
                                 end
+                                Columns -= 1
                             end
 
                             Columns = math.max(1, Columns)
@@ -3674,14 +3865,10 @@ function Library:Window(TitleOrIcon, WindowScale)
                         end
 
                         local function UpdateSelection(Item, IsSelected, CellBtn, Silent)
+                            local ItemKey = GetItemKey(Item)
                             if IsSelected then
                                 if not MultiSelect then
-                                    for _, sel in ipairs(Selected) do
-                                        if sel ~= Item then
-                                            local idx = table.find(Selected, sel)
-                                            if idx then table.remove(Selected, idx) end
-                                        end
-                                    end
+                                    table.clear(SelectedKeys)
                                     for _, Btn in ipairs(CellButtons) do
                                         if Btn.Item ~= Item then
                                             ApplySelectionVisualState(Btn, false)
@@ -3689,22 +3876,21 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     end
                                 end
 
-                                if not table.find(Selected, Item) then
-                                    table.insert(Selected, Item)
-                                end
+                                SelectedKeys[ItemKey] = true
+                                SyncSelectedList()
 
                                 ApplySelectionVisualState(CellBtn, true)
 
-                                if SelectionNotify then
+                                if SelectionNotify and not Silent then
                                     NotifyOnce("Selected: " .. (Item.Name or "Item"), "Success")
                                 end
                             else
-                                local idx = table.find(Selected, Item)
-                                if idx then table.remove(Selected, idx) end
+                                SelectedKeys[ItemKey] = nil
+                                SyncSelectedList()
 
                                 ApplySelectionVisualState(CellBtn, false)
 
-                                if SelectionNotify then
+                                if SelectionNotify and not Silent then
                                     NotifyOnce("Deselected: " .. (Item.Name or "Item"), "Info")
                                 end
                             end
@@ -3856,7 +4042,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             }
                             table.insert(CellButtons, CellData)
 
-                            if table.find(Selected, Item) then
+                            if SelectedKeys[GetItemKey(Item)] then
                                 task.defer(function()
                                     if CellBtn and CellBtn.Parent then
                                         ApplySelectionVisualState(CellData, true)
@@ -3866,7 +4052,7 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                             if Item.Default or (Props.Default and (Props.Default == Item.Name or (type(Props.Default) == "table" and table.find(Props.Default, Item.Name)))) then
                                 task.defer(function()
-                                    UpdateSelection(Item, true, CellData)
+                                    UpdateSelection(Item, true, CellData, true)
                                 end)
                             end
 
@@ -3957,33 +4143,38 @@ function Library:Window(TitleOrIcon, WindowScale)
                         -- Grid Functions
                         function GridFunctions:SetItems(NewItems)
                             GridItems = NewItems
+                            SyncSelectedList()
                             RefreshGrid()
                         end
 
                         function GridFunctions:SetSelected(Items, Silent)
                             if type(Items) ~= "table" then Items = {Items} end
+                            table.clear(SelectedKeys)
+
+                            if not MultiSelect and #Items > 0 then
+                                local First = Items[1]
+                                Items = {First}
+                            end
+
+                            for _, Entry in ipairs(Items) do
+                                local EntryKey = GetItemKey(Entry)
+                                if EntryKey ~= "" then
+                                    SelectedKeys[EntryKey] = true
+                                end
+                            end
+
+                            SyncSelectedList()
+
                             for _, Cell in ipairs(CellButtons) do
-                                if table.find(Selected, Cell.Item) then
-                                    UpdateSelection(Cell.Item, false, Cell, true)
-                                else
-                                    ApplySelectionVisualState(Cell, false)
+                                ApplySelectionVisualState(Cell, SelectedKeys[GetItemKey(Cell.Item)] == true)
+                            end
+
+                            if not Silent and OnSelect then
+                                for _, Item in ipairs(Selected) do
+                                    OnSelect(Selected, Item, true)
                                 end
                             end
-                            table.clear(Selected)
-                            for _, Name in ipairs(Items) do
-                                for _, Cell in ipairs(CellButtons) do
-                                    if Cell.Item.Name == Name or Cell.Item == Name then
-                                        if not table.find(Selected, Cell.Item) then
-                                            table.insert(Selected, Cell.Item)
-                                        end
-                                        ApplySelectionVisualState(Cell, true)
-                                        if not Silent and OnSelect then
-                                            OnSelect(Selected, Cell.Item, true)
-                                        end
-                                        break
-                                    end
-                                end
-                            end
+
                             if Props.Flag and Library.Flags[Props.Flag] then
                                 Library.Flags[Props.Flag].Value = Selected
                             end
@@ -3998,8 +4189,13 @@ function Library:Window(TitleOrIcon, WindowScale)
                         end
 
                         function GridFunctions:ClearSelection()
+                            table.clear(SelectedKeys)
+                            table.clear(Selected)
                             for _, Cell in ipairs(CellButtons) do
-                                UpdateSelection(Cell.Item, false, Cell, true)
+                                ApplySelectionVisualState(Cell, false)
+                            end
+                            if Props.Flag and Library.Flags[Props.Flag] then
+                                Library.Flags[Props.Flag].Value = Selected
                             end
                         end
 
@@ -4018,10 +4214,14 @@ function Library:Window(TitleOrIcon, WindowScale)
                         end
 
                         function GridFunctions:SetValue(Val)
-                            if type(Val) == "table" then
-                                GridFunctions:SetSelected(Val)
+                            if type(Val) == "table" and Val.Selected ~= nil then
+                                Favorites = type(Val.Favorites) == "table" and Val.Favorites or Favorites
+                                GridFunctions:SetSelected(Val.Selected, true)
+                                RefreshGrid()
+                            elseif type(Val) == "table" then
+                                GridFunctions:SetSelected(Val, true)
                             else
-                                GridFunctions:SetSelected({Val})
+                                GridFunctions:SetSelected({Val}, true)
                             end
                         end
 
@@ -4055,9 +4255,15 @@ function Library:Window(TitleOrIcon, WindowScale)
                             end,
                             Deserialize = function(data)
                                 if type(data) == "table" then
-                                    return data.Selected or {}
+                                    return {
+                                        Selected = data.Selected or {},
+                                        Favorites = data.Favorites or {}
+                                    }
                                 end
-                                return {}
+                                return {
+                                    Selected = {},
+                                    Favorites = {}
+                                }
                             end
                         }
 
