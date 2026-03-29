@@ -28,6 +28,13 @@ Library.MainFrameUIScale = nil
 Library.MainFrameBuildScale = 1
 Library.TooltipFrame = nil
 Library.ConfigProfiles = {}
+Library.ScrollLocks = {}
+Library.ConfigRules = {
+    SaveDefaults = true,
+    Include = nil,
+    Exclude = nil,
+    Defaults = {}
+}
 
 -- Configuration
 local Config = {
@@ -157,6 +164,54 @@ local function HideTooltip()
     end
 end
 
+local function ApplyTextOptions(TextObject, Options)
+    if not TextObject or not Options then
+        return
+    end
+
+    if Options.Wrap ~= nil then
+        TextObject.TextWrapped = Options.Wrap
+    end
+    if Options.Truncate then
+        TextObject.TextTruncate = Options.Truncate
+    end
+    if Options.RichText ~= nil then
+        TextObject.RichText = Options.RichText
+    end
+    if Options.XAlignment then
+        TextObject.TextXAlignment = Options.XAlignment
+    end
+    if Options.YAlignment then
+        TextObject.TextYAlignment = Options.YAlignment
+    end
+    if Options.Monospace then
+        TextObject.FontFace = Font.new("rbxasset://fonts/families/Inconsolata.json", Enum.FontWeight.Regular, Enum.FontStyle.Normal)
+    end
+    if Options.CopyOnClick and TextObject:IsA("GuiButton") then
+        TextObject.MouseButton1Click:Connect(function()
+            if setclipboard then
+                pcall(setclipboard, TextObject.Text)
+                Library:Notify("Copied to clipboard", 1.4, "Success")
+            end
+        end)
+    end
+end
+
+local function SetScrollLocked(ScrollFrame, Locked)
+    if not ScrollFrame then
+        return
+    end
+    ScrollFrame.ScrollingEnabled = not Locked
+end
+
+local function RegisterPopup(PopupData)
+    Library:ClosePopups()
+    Library.ActivePopup = PopupData
+    if PopupData and PopupData.ScrollLock then
+        SetScrollLocked(PopupData.ScrollLock, true)
+    end
+end
+
 local function SetGuiInteractable(Gui, Enabled)
     if not Gui then
         return
@@ -183,6 +238,8 @@ local function AttachControlStateApi(Control, Options)
     local TooltipText = Options.Tooltip
     local LoadingText = Options.LoadingText or "Loading..."
     local OriginalText = {}
+    local Destroyed = false
+    local Cleanup = Options.Cleanup or {}
 
     if Root and #TooltipTargets == 0 then
         TooltipTargets = {Root}
@@ -271,6 +328,29 @@ local function AttachControlStateApi(Control, Options)
         return Loading
     end
 
+    function Control:Destroy()
+        if Destroyed then
+            return
+        end
+        Destroyed = true
+        HideTooltip()
+        for _, Item in ipairs(Cleanup) do
+            if typeof(Item) == "RBXScriptConnection" then
+                pcall(function() Item:Disconnect() end)
+            elseif type(Item) == "function" then
+                pcall(Item)
+            elseif type(Item) == "table" and Item.Destroy then
+                pcall(function() Item:Destroy() end)
+            end
+        end
+        if Options.OnDestroy then
+            pcall(Options.OnDestroy)
+        end
+        if Root and Root.Parent then
+            Root:Destroy()
+        end
+    end
+
     BindTooltip()
     ApplyState()
     return Control
@@ -327,7 +407,20 @@ end
 -- Config System with Serialization Support
 function Library:EnableConfig(Name)
     Library.ConfigEnabled = true
-    Library.ConfigName = GetConfigBaseName(Name)
+    if type(Name) == "table" then
+        Library.ConfigName = GetConfigBaseName(Name.Name or Library.ConfigName)
+        Library:ConfigurePersistence(Name)
+    else
+        Library.ConfigName = GetConfigBaseName(Name)
+    end
+end
+
+function Library:ConfigurePersistence(Options)
+    Options = Options or {}
+    Library.ConfigRules.SaveDefaults = Options.SaveDefaults ~= false
+    Library.ConfigRules.Include = Options.Include
+    Library.ConfigRules.Exclude = Options.Exclude
+    Library.ConfigRules.Defaults = Options.Defaults or Library.ConfigRules.Defaults or {}
 end
 
 function Library:GetConfigProfiles()
@@ -383,9 +476,27 @@ function Library:SaveConfig(NameOrSilent, MaybeSilent)
 
     local Data = {}
     for Flag, Func in pairs(Library.Flags) do
-        if Func.GetValue then
+        local Included = true
+        if Library.ConfigRules.Include then
+            Included = table.find(Library.ConfigRules.Include, Flag) ~= nil
+        end
+        if Included and Library.ConfigRules.Exclude then
+            Included = table.find(Library.ConfigRules.Exclude, Flag) == nil
+        end
+        if Func.IncludeInConfig == false then
+            Included = false
+        end
+
+        if Included and Func.GetValue then
             local Success, Value = pcall(function() return Func:GetValue() end)
             if Success then
+                local DefaultValue = Func.DefaultValue
+                if DefaultValue == nil then
+                    DefaultValue = Library.ConfigRules.Defaults[Flag]
+                end
+                if not Library.ConfigRules.SaveDefaults and DefaultValue ~= nil and Value == DefaultValue then
+                    continue
+                end
                 if Func.Serialize then
                     Data[Flag] = Func.Serialize(Value)
                 else
@@ -424,6 +535,11 @@ function Library:LoadConfig(NameOrSilent, MaybeSilent)
         end)
 
         if Success and Decoded then
+            for Flag, DefaultValue in pairs(Library.ConfigRules.Defaults) do
+                if Decoded[Flag] == nil and Library.Flags[Flag] and Library.Flags[Flag].SetValue then
+                    pcall(function() Library.Flags[Flag]:SetValue(DefaultValue) end)
+                end
+            end
             for Flag, Value in pairs(Decoded) do
                 if Library.Flags[Flag] then
                     if Library.Flags[Flag].Deserialize then
@@ -553,9 +669,24 @@ function Library:Confirm(Title, Message, Callback, Options)
             task.wait(0.2)
             Dialog:Destroy()
             Backdrop:Destroy()
+            if Library.ActivePopup and Library.ActivePopup.Element == Dialog then
+                Library.ActivePopup = nil
+            end
             if Callback then Callback(BtnData.Result) end
         end)
     end
+
+    RegisterPopup({
+        Element = Dialog,
+        Ignore = {Dialog},
+        Close = function()
+            TweenService:Create(Dialog, CreateTween(0.2), {GroupTransparency = 1}):Play()
+            TweenService:Create(Backdrop, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
+            task.wait(0.2)
+            if Dialog.Parent then Dialog:Destroy() end
+            if Backdrop.Parent then Backdrop:Destroy() end
+        end
+    })
 
     return Dialog
 end
@@ -674,6 +805,9 @@ end
 
 function Library:ClosePopups()
     if Library.ActivePopup then
+        if Library.ActivePopup.ScrollLock then
+            SetScrollLocked(Library.ActivePopup.ScrollLock, false)
+        end
         if Library.ActivePopup.Close then
             Library.ActivePopup.Close()
         end
@@ -1102,6 +1236,7 @@ function Library:Window(TitleOrIcon, WindowScale)
     local CurrentActiveSections = nil
     local IsAnimatingTab = false
     local AllTabs = {} -- Track all tabs for visibility
+    local TabObjects = {}
 
     function WindowFunctions:AddTab(IconAsset)
         local TabButton = CreateInstance("ImageButton", {
@@ -1142,6 +1277,7 @@ function Library:Window(TitleOrIcon, WindowScale)
         local IsThisTabActive = FirstTab
         local TabFirstSubCategory = true
         local ActiveSubAction = nil
+        local CategoryObjects = {}
 
         table.insert(Library.DynamicUpdates, function()
             if IsThisTabActive then
@@ -1156,6 +1292,10 @@ function Library:Window(TitleOrIcon, WindowScale)
         local function ActivateTab()
             if IsAnimatingTab then return end
             Library:ClosePopups()
+            for _, TabObject in ipairs(TabObjects) do
+                TabObject.IsActive = false
+            end
+            IsThisTabActive = true
 
             for _, Btn in ipairs(AllTabs) do
                 if Btn:IsA("ImageButton") then
@@ -1213,6 +1353,18 @@ function Library:Window(TitleOrIcon, WindowScale)
             FirstTab = false
             IconImg.ImageColor3 = Config.Colors.TextLight
             TabButton.BackgroundTransparency = 0.9
+        end
+
+        function TabFunctions:Select()
+            ActivateTab()
+        end
+
+        function TabFunctions:IsSelected()
+            return IsThisTabActive
+        end
+
+        function TabFunctions:GetCategories()
+            return CategoryObjects
         end
 
         function TabFunctions:AddCategory(CatName)
@@ -1274,6 +1426,8 @@ function Library:Window(TitleOrIcon, WindowScale)
             end)
 
             local CategoryFunctions = {}
+            local SubCategoryObjects = {}
+            table.insert(CategoryObjects, CategoryFunctions)
 
             function CategoryFunctions:AddSubCategory(SubCatName)
                 local SubButton = CreateInstance("TextButton", {
@@ -1300,6 +1454,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                 local AssociatedSections = {}
                 local SubState = {bIsActive = false, oButton = SubButton, oActiveBorder = ActiveBorder}
                 table.insert(TabSubCategories, SubState)
+                SubFunctions._state = SubState
+                SubFunctions._sections = AssociatedSections
+                table.insert(SubCategoryObjects, SubFunctions)
 
                 table.insert(Library.DynamicUpdates, function()
                     if SubState.bIsActive then
@@ -1316,6 +1473,9 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                 local function SelectSubCategory(NoFade)
                     Library:ClosePopups()
+                    if not IsThisTabActive then
+                        ActivateTab()
+                    end
                     ActiveSubAction = SelectSubCategory
                     CurrentActiveSections = AssociatedSections
 
@@ -1381,6 +1541,14 @@ function Library:Window(TitleOrIcon, WindowScale)
                     if IsThisTabActive then
                         SelectSubCategory(true)
                     end
+                end
+
+                function SubFunctions:Select(NoFade)
+                    SelectSubCategory(NoFade == true)
+                end
+
+                function SubFunctions:IsSelected()
+                    return SubState.bIsActive
                 end
 
                 function SubFunctions:AddSection(SectionName)
@@ -1478,6 +1646,31 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                     local SectionFunctions = {}
                     local SearchBox = nil
+                    SectionFunctions._frame = SectionFrame
+                    SectionFunctions._expanded = true
+
+                    local function SetExpanded(Expanded)
+                        SecOpen = Expanded and true or false
+                        SectionFunctions._expanded = SecOpen
+                        ElementsContainer.Visible = SecOpen
+                        TweenService:Create(SecIcon, CreateTween(0.2), {Rotation = SecOpen and 0 or -90}):Play()
+                    end
+
+                    function SectionFunctions:Expand()
+                        SetExpanded(true)
+                    end
+
+                    function SectionFunctions:Collapse()
+                        SetExpanded(false)
+                    end
+
+                    function SectionFunctions:ToggleExpanded()
+                        SetExpanded(not SecOpen)
+                    end
+
+                    function SectionFunctions:IsExpanded()
+                        return SecOpen
+                    end
 
                     -- AddCustomContainer method
                     function SectionFunctions:AddCustomContainer(Properties)
@@ -1947,6 +2140,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     TextXAlignment = Enum.TextXAlignment.Right,
                                     Text = GetItemRight(Item)
                                 }, {TextColor3 = "TextMain"})
+                                ApplyTextOptions(TitleLabel, Props)
+                                ApplyTextOptions(DescriptionLabel, Props)
+                                ApplyTextOptions(RightLabel, Props)
 
                                 Button.MouseEnter:Connect(function()
                                     if SelectedIndex ~= Index then
@@ -2010,6 +2206,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         function ListFunctions:GetItems()
                             return Items
                         end
+                        ListFunctions.IncludeInConfig = Props.IncludeInConfig == true
 
                         Rebuild()
 
@@ -2023,6 +2220,420 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Library.Flags[Props.Flag] = ListFunctions
                         end
                         return ListFunctions
+                    end
+
+                    function SectionFunctions:Keybind(Props)
+                        Props = Props or {}
+                        local Binding = Props.Default
+                        local Listening = false
+
+                        local KeybindFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(24))
+                        })
+
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = KeybindFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Keybind",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, Scale(-82), 1, 0)
+                        }, {TextColor3 = "TextMain"})
+
+                        local BindButton = CreateInstance("TextButton", {
+                            Parent = KeybindFrame,
+                            BorderSizePixel = 0,
+                            AnchorPoint = Vector2.new(1, 0),
+                            Position = UDim2.new(1, 0, 0, 0),
+                            Size = UDim2.new(0, Scale(76), 1, 0),
+                            FontFace = Config.Font,
+                            TextSize = Scale(10),
+                            AutoButtonColor = false,
+                            Text = GetBindText(Binding)
+                        }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
+
+                        CreateInstance("UICorner", {Parent = BindButton, CornerRadius = UDim.new(0, Scale(4))})
+                        local BindStroke = CreateInstance("UIStroke", {Parent = BindButton, Thickness = 1}, {Color = "Border"})
+                        ApplyTextOptions(Title, Props)
+                        ApplyTextOptions(BindButton, Props)
+
+                        local CaptureConnection
+
+                        local function StopListening(NewBind)
+                            Listening = false
+                            TweenService:Create(BindStroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
+                            if CaptureConnection then
+                                CaptureConnection:Disconnect()
+                                CaptureConnection = nil
+                            end
+                            if NewBind ~= nil then
+                                Binding = NewBind
+                                BindButton.Text = GetBindText(Binding)
+                                if Props.Callback then
+                                    Props.Callback(Binding)
+                                end
+                            else
+                                BindButton.Text = GetBindText(Binding)
+                            end
+                        end
+
+                        BindButton.MouseButton1Click:Connect(function()
+                            if Listening then
+                                StopListening(nil)
+                                return
+                            end
+
+                            Listening = true
+                            BindButton.Text = "Press..."
+                            TweenService:Create(BindStroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
+
+                            CaptureConnection = UserInputService.InputBegan:Connect(function(Input, Processed)
+                                if Processed then
+                                    return
+                                end
+                                if Input.KeyCode == Enum.KeyCode.Escape then
+                                    StopListening(nil)
+                                    return
+                                end
+                                if Input.UserInputType == Enum.UserInputType.Keyboard then
+                                    StopListening(Input.KeyCode)
+                                elseif Input.UserInputType == Enum.UserInputType.MouseButton1
+                                    or Input.UserInputType == Enum.UserInputType.MouseButton2
+                                    or Input.UserInputType == Enum.UserInputType.MouseButton3 then
+                                    StopListening(Input.UserInputType)
+                                end
+                            end)
+                        end)
+
+                        local KeybindFunctions = {}
+                        function KeybindFunctions:SetValue(Value)
+                            Binding = Value
+                            BindButton.Text = GetBindText(Binding)
+                        end
+                        function KeybindFunctions:GetValue()
+                            return Binding
+                        end
+                        function KeybindFunctions:Clear()
+                            KeybindFunctions:SetValue(nil)
+                            if Props.Callback then
+                                Props.Callback(nil)
+                            end
+                        end
+                        KeybindFunctions.DefaultValue = Props.Default
+                        KeybindFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
+
+                        AttachControlStateApi(KeybindFunctions, {
+                            Root = KeybindFrame,
+                            Interactive = {BindButton},
+                            TextTargets = {BindButton},
+                            Tooltip = Props.Tooltip,
+                            Cleanup = {
+                                function()
+                                    if CaptureConnection then
+                                        CaptureConnection:Disconnect()
+                                        CaptureConnection = nil
+                                    end
+                                end
+                            },
+                            SetDisabledState = function(Disabled)
+                                if Disabled and Listening then
+                                    StopListening(nil)
+                                end
+                            end
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = KeybindFunctions
+                        end
+                        return KeybindFunctions
+                    end
+
+                    function SectionFunctions:Table(Props)
+                        Props = Props or {}
+                        local Columns = Props.Columns or {}
+                        local Rows = Props.Rows or {}
+                        local RowHeight = Props.RowHeight or Scale(24)
+                        local TableState = "ready"
+                        local StateMessage = ""
+                        local SortColumn = nil
+                        local SortDirection = "asc"
+
+                        local TableFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Props.Height or Scale(180)),
+                            BorderSizePixel = 0
+                        })
+
+                        if Props.Title then
+                            local TitleLabel = CreateInstance("TextLabel", {
+                                Parent = TableFrame,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(1, 0, 0, Scale(16)),
+                                FontFace = Config.Font,
+                                TextSize = Scale(11),
+                                TextXAlignment = Enum.TextXAlignment.Left,
+                                Text = Props.Title
+                            }, {TextColor3 = "TextMain"})
+                            ApplyTextOptions(TitleLabel, Props)
+                        end
+
+                        local HeaderFrame = CreateInstance("Frame", {
+                            Parent = TableFrame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, Props.Title and Scale(18) or 0),
+                            Size = UDim2.new(1, 0, 0, Scale(22))
+                        }, {BackgroundColor3 = "ElementBg"})
+                        CreateInstance("UICorner", {Parent = HeaderFrame, CornerRadius = UDim.new(0, Scale(4))})
+                        CreateInstance("UIStroke", {Parent = HeaderFrame, Thickness = 1}, {Color = "Border"})
+
+                        local HeaderLayout = CreateInstance("UIListLayout", {
+                            Parent = HeaderFrame,
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            Padding = UDim.new(0, Scale(4))
+                        })
+
+                        local HeaderPadding = CreateInstance("UIPadding", {
+                            Parent = HeaderFrame,
+                            PaddingLeft = UDim.new(0, Scale(8)),
+                            PaddingRight = UDim.new(0, Scale(8))
+                        })
+
+                        local BodyScroll = CreateInstance("ScrollingFrame", {
+                            Parent = TableFrame,
+                            BackgroundTransparency = 0,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, (Props.Title and Scale(18) or 0) + Scale(26)),
+                            Size = UDim2.new(1, 0, 1, -((Props.Title and Scale(18) or 0) + Scale(26))),
+                            CanvasSize = UDim2.new(0, 0, 0, 0),
+                            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                            ScrollBarThickness = 2
+                        }, {BackgroundColor3 = "ElementBg", ScrollBarImageColor3 = "Border"})
+                        CreateInstance("UICorner", {Parent = BodyScroll, CornerRadius = UDim.new(0, Scale(4))})
+                        CreateInstance("UIStroke", {Parent = BodyScroll, Thickness = 1}, {Color = "Border"})
+
+                        local BodyContent = CreateInstance("Frame", {
+                            Parent = BodyScroll,
+                            BackgroundTransparency = 1,
+                            Position = UDim2.new(0, Scale(2), 0, Scale(2)),
+                            Size = UDim2.new(1, Scale(-4), 0, 0),
+                            AutomaticSize = Enum.AutomaticSize.Y,
+                            BorderSizePixel = 0
+                        })
+                        CreateInstance("UIListLayout", {Parent = BodyContent, Padding = UDim.new(0, Scale(4))})
+
+                        local StateLabel = CreateInstance("TextLabel", {
+                            Parent = BodyScroll,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, Scale(-12), 0, Scale(24)),
+                            Position = UDim2.new(0, Scale(6), 0, Scale(8)),
+                            FontFace = Config.Font,
+                            TextSize = Scale(10),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Text = "",
+                            Visible = false
+                        }, {TextColor3 = "TextMain"})
+
+                        local RebuildRows
+                        local function BuildColumns(Target, TextColorKey, IsHeader)
+                            local TotalWeight = 0
+                            for _, Column in ipairs(Columns) do
+                                TotalWeight += Column.Width or 1
+                            end
+                            local Padding = math.max(0, (#Columns - 1) * Scale(4))
+                            local WidthOffset = -Padding
+
+                            for _, Column in ipairs(Columns) do
+                                local HeaderParent = Target
+                                local Label
+                                if IsHeader then
+                                    HeaderParent = CreateInstance("TextButton", {
+                                        Parent = Target,
+                                        BackgroundTransparency = 1,
+                                        AutoButtonColor = false,
+                                        Text = "",
+                                        Size = UDim2.new((Column.Width or 1) / math.max(1, TotalWeight), WidthOffset / math.max(1, #Columns), 1, 0)
+                                    })
+                                    Label = CreateInstance("TextLabel", {
+                                        Parent = HeaderParent,
+                                        BackgroundTransparency = 1,
+                                        Size = UDim2.new(1, 0, 1, 0),
+                                        FontFace = Font.new("rbxassetid://12187371840", Enum.FontWeight.Bold),
+                                        TextSize = Scale(10),
+                                        TextXAlignment = Column.Alignment or Enum.TextXAlignment.Left,
+                                        Text = tostring(Column.Title or Column.Key or "")
+                                    }, {TextColor3 = TextColorKey})
+                                    HeaderParent.MouseButton1Click:Connect(function()
+                                        if SortColumn == Column.Key then
+                                            SortDirection = SortDirection == "asc" and "desc" or "asc"
+                                        else
+                                            SortColumn = Column.Key
+                                            SortDirection = "asc"
+                                        end
+                                        RebuildRows()
+                                    end)
+                                else
+                                    Label = CreateInstance("TextLabel", {
+                                        Parent = HeaderParent,
+                                        BackgroundTransparency = 1,
+                                        Size = UDim2.new((Column.Width or 1) / math.max(1, TotalWeight), WidthOffset / math.max(1, #Columns), 1, 0),
+                                        FontFace = Config.Font,
+                                        TextSize = Scale(9),
+                                        TextXAlignment = Column.Alignment or Enum.TextXAlignment.Left,
+                                        Text = tostring(Column.Title or Column.Key or "")
+                                    }, {TextColor3 = TextColorKey})
+                                end
+                                Label.TextTruncate = Enum.TextTruncate.AtEnd
+                                ApplyTextOptions(Label, Column)
+                            end
+                        end
+
+                        local function GetSortedRows()
+                            local SortedRows = table.clone(Rows)
+                            if not SortColumn then
+                                return SortedRows
+                            end
+                            table.sort(SortedRows, function(A, B)
+                                local AV = type(A) == "table" and A[SortColumn] or nil
+                                local BV = type(B) == "table" and B[SortColumn] or nil
+                                if tonumber(AV) and tonumber(BV) then
+                                    AV = tonumber(AV)
+                                    BV = tonumber(BV)
+                                else
+                                    AV = tostring(AV or "")
+                                    BV = tostring(BV or "")
+                                end
+                                if SortDirection == "desc" then
+                                    return AV > BV
+                                end
+                                return AV < BV
+                            end)
+                            return SortedRows
+                        end
+
+                        RebuildRows = function()
+                            for _, Child in ipairs(BodyContent:GetChildren()) do
+                                if Child:IsA("Frame") then
+                                    Child:Destroy()
+                                end
+                            end
+
+                            if TableState ~= "ready" then
+                                BodyContent.Visible = false
+                                StateLabel.Visible = true
+                                if TableState == "loading" then
+                                    StateLabel.Text = StateMessage ~= "" and StateMessage or "Loading..."
+                                elseif TableState == "error" then
+                                    StateLabel.Text = StateMessage ~= "" and StateMessage or "Something went wrong"
+                                else
+                                    StateLabel.Text = StateMessage ~= "" and StateMessage or "No rows"
+                                end
+                                return
+                            end
+
+                            BodyContent.Visible = true
+                            StateLabel.Visible = false
+
+                            local SortedRows = GetSortedRows()
+                            if #SortedRows == 0 then
+                                BodyContent.Visible = false
+                                StateLabel.Visible = true
+                                StateLabel.Text = Props.EmptyText or "No rows"
+                                return
+                            end
+
+                            for _, Row in ipairs(SortedRows) do
+                                local RowFrame = CreateInstance("Frame", {
+                                    Parent = BodyContent,
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(1, 0, 0, RowHeight)
+                                }, {BackgroundColor3 = "PanelBg"})
+                                CreateInstance("UICorner", {Parent = RowFrame, CornerRadius = UDim.new(0, Scale(4))})
+                                CreateInstance("UIStroke", {Parent = RowFrame, Thickness = 1}, {Color = "Border"})
+                                CreateInstance("UIListLayout", {
+                                    Parent = RowFrame,
+                                    FillDirection = Enum.FillDirection.Horizontal,
+                                    Padding = UDim.new(0, Scale(4))
+                                })
+                                CreateInstance("UIPadding", {
+                                    Parent = RowFrame,
+                                    PaddingLeft = UDim.new(0, Scale(8)),
+                                    PaddingRight = UDim.new(0, Scale(8))
+                                })
+
+                                local TotalWeight = 0
+                                for _, Column in ipairs(Columns) do
+                                    TotalWeight += Column.Width or 1
+                                end
+                                local Padding = math.max(0, (#Columns - 1) * Scale(4))
+                                local WidthOffset = -Padding
+
+                                for _, Column in ipairs(Columns) do
+                                    local Value = ""
+                                    if type(Row) == "table" then
+                                        Value = Row[Column.Key] or Row[Column.Title] or ""
+                                    end
+                                    local Label = CreateInstance("TextLabel", {
+                                        Parent = RowFrame,
+                                        BackgroundTransparency = 1,
+                                        Size = UDim2.new((Column.Width or 1) / math.max(1, TotalWeight), WidthOffset / math.max(1, #Columns), 1, 0),
+                                        FontFace = Config.Font,
+                                        TextSize = Scale(9),
+                                        TextXAlignment = Column.Alignment or Enum.TextXAlignment.Left,
+                                        Text = tostring(Value)
+                                    }, {TextColor3 = "TextLight"})
+                                    Label.TextTruncate = Enum.TextTruncate.AtEnd
+                                    ApplyTextOptions(Label, Column)
+                                end
+                            end
+                        end
+
+                        BuildColumns(HeaderFrame, "TextMain", true)
+                        RebuildRows()
+
+                        local TableFunctions = {}
+                        function TableFunctions:SetRows(NewRows)
+                            Rows = NewRows or {}
+                            TableState = "ready"
+                            RebuildRows()
+                        end
+                        function TableFunctions:AddRow(Row)
+                            table.insert(Rows, Row)
+                            TableState = "ready"
+                            RebuildRows()
+                        end
+                        function TableFunctions:Clear()
+                            Rows = {}
+                            RebuildRows()
+                        end
+                        function TableFunctions:SetState(State, Message)
+                            TableState = State or "ready"
+                            StateMessage = tostring(Message or "")
+                            RebuildRows()
+                        end
+                        function TableFunctions:SortBy(ColumnKey, Direction)
+                            SortColumn = ColumnKey
+                            SortDirection = Direction or "asc"
+                            RebuildRows()
+                        end
+                        function TableFunctions:GetValue()
+                            return Rows
+                        end
+                        TableFunctions.IncludeInConfig = Props.IncludeInConfig == true
+
+                        AttachControlStateApi(TableFunctions, {
+                            Root = TableFrame,
+                            Interactive = {BodyScroll},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = TableFunctions
+                        end
+                        return TableFunctions
                     end
 
                     function SectionFunctions:ConfigManager(Props)
@@ -2179,6 +2790,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         function ManagerFunctions:Refresh()
                             RefreshProfiles()
                         end
+                        ManagerFunctions.IncludeInConfig = false
 
                         AttachControlStateApi(ManagerFunctions, {
                             Root = ManagerFrame,
@@ -2308,6 +2920,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local LabelFunctions = {}
                         function LabelFunctions:SetValue(Val) Title.Text = tostring(Val) end
                         function LabelFunctions:GetValue() return Title.Text end
+                        ApplyTextOptions(Title, Props)
 
                         AttachControlStateApi(LabelFunctions, {
                             Root = LabelFrame,
@@ -2341,7 +2954,8 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Parent = InputFrame,
                             BorderSizePixel = 0,
                             Position = UDim2.new(0, 0, 0, Scale(16)),
-                            Size = UDim2.new(1, 0, 0, Scale(22))
+                            Size = UDim2.new(1, 0, 0, Scale(22)),
+                            ClipsDescendants = true
                         }, {BackgroundColor3 = "ElementBg"})
 
                         CreateInstance("UICorner", {Parent = BoxContainer, CornerRadius = UDim.new(0, Scale(4))})
@@ -2356,15 +2970,25 @@ function Library:Window(TitleOrIcon, WindowScale)
                             TextSize = Scale(11),
                             Text = Props.Default or "",
                             PlaceholderText = Props.Placeholder or "Enter text...",
-                            ClearTextOnFocus = false
+                            ClearTextOnFocus = false,
+                            ClipsDescendants = true,
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            TextTruncate = Enum.TextTruncate.AtEnd
                         }, {TextColor3 = "TextLight", PlaceholderColor3 = "TextMain"})
+                        ApplyTextOptions(TextBox, Props)
 
                         TextBox.Focused:Connect(function()
                             TweenService:Create(BoxStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                            if Props.OnFocusExpand then
+                                TextBox.TextTruncate = Enum.TextTruncate.None
+                            end
                         end)
 
                         TextBox.FocusLost:Connect(function(EnterPressed)
                             TweenService:Create(BoxStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                            if Props.OnFocusExpand and Props.Truncate then
+                                TextBox.TextTruncate = Props.Truncate
+                            end
                             if Props.Callback then
                                 Props.Callback(TextBox.Text, EnterPressed)
                             end
@@ -2378,6 +3002,8 @@ function Library:Window(TitleOrIcon, WindowScale)
                             end
                         end
                         function InputFunctions:GetValue() return TextBox.Text end
+                        InputFunctions.DefaultValue = Props.Default or ""
+                        InputFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
 
                         AttachControlStateApi(InputFunctions, {
                             Root = InputFrame,
@@ -2426,6 +3052,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             TextXAlignment = Enum.TextXAlignment.Left,
                             AutoButtonColor = false
                         }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
+                        ApplyTextOptions(DropdownBtn, Props)
 
                         CreateInstance("UICorner", {Parent = DropdownBtn, CornerRadius = UDim.new(0, Scale(4))})
                         local BtnStroke = CreateInstance("UIStroke", {Parent = DropdownBtn, Thickness = 1}, {Color = "Border"})
@@ -2448,6 +3075,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             BorderSizePixel = 0,
                             Size = UDim2.new(1, 0, 0, 0),
                             Visible = false,
+                            ClipsDescendants = true,
                             ZIndex = 100
                         }, {BackgroundColor3 = "ElementBg"})
 
@@ -2462,6 +3090,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                             CanvasSize = UDim2.new(0, 0, 0, 0),
                             ScrollBarThickness = 2,
                             AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                            Active = true,
+                            ScrollingDirection = Enum.ScrollingDirection.Y,
+                            ScrollingEnabled = true,
                             ZIndex = 101
                         })
 
@@ -2488,8 +3119,25 @@ function Library:Window(TitleOrIcon, WindowScale)
                             local MaxHeight = math.min(#Options * Scale(24) + Scale(4), Scale(120))
                             TweenService:Create(OptionFrame, CreateTween(0.2), {Size = UDim2.new(1, 0, 0, MaxHeight)}):Play()
 
-                            Library.ActivePopup = {Element = OptionFrame, Close = CloseMenu}
+                            RegisterPopup({
+                                Element = OptionFrame,
+                                Ignore = {DropdownBtn},
+                                Close = CloseMenu,
+                                ScrollLock = SectionContainer
+                            })
                         end
+
+                        OptionScroll.MouseEnter:Connect(function()
+                            if MenuOpen then
+                                SetScrollLocked(SectionContainer, true)
+                            end
+                        end)
+
+                        OptionScroll.MouseLeave:Connect(function()
+                            if not Library.ActivePopup or Library.ActivePopup.Element ~= OptionFrame then
+                                SetScrollLocked(SectionContainer, false)
+                            end
+                        end)
 
                         DropdownBtn.MouseButton1Click:Connect(function()
                             if MenuOpen then CloseMenu() else OpenMenu() end
@@ -2551,6 +3199,8 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Options = NewOptions
                             BuildOptions()
                         end
+                        DropdownFunctions.DefaultValue = Props.Default
+                        DropdownFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
 
                         AttachControlStateApi(DropdownFunctions, {
                             Root = DropdownFrame,
@@ -2622,6 +3272,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         function ProgressFunctions:GetValue()
                             return BarFill.Size.X.Scale * 100
                         end
+                        ApplyTextOptions(PercentLabel, Props)
 
                         AttachControlStateApi(ProgressFunctions, {
                             Root = BarFrame,
@@ -2692,6 +3343,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local ToggleFunctions = {}
                         function ToggleFunctions:SetValue(Val) UpdateState(Val) end
                         function ToggleFunctions:GetValue() return Toggled end
+                        ToggleFunctions.DefaultValue = Props.Default or false
+                        ToggleFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
+                        ApplyTextOptions(Title, Props)
 
                         AttachControlStateApi(ToggleFunctions, {
                             Root = ToggleFrame,
@@ -2731,6 +3385,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             TextXAlignment = Enum.TextXAlignment.Right,
                             Size = UDim2.new(1, 0, 0, Scale(16))
                         }, {TextColor3 = "TextLight"})
+                        ApplyTextOptions(ValueLabel, Props)
 
                         local SliderBg = CreateInstance("TextButton", {
                             Parent = SliderFrame,
@@ -2801,6 +3456,8 @@ function Library:Window(TitleOrIcon, WindowScale)
                         end
 
                         function SliderFunctions:GetValue() return CurrentValue end
+                        SliderFunctions.DefaultValue = Props.Default or ZeroValue
+                        SliderFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
 
                         local StartPercent = (CurrentValue - Props.Min) / (Props.Max - Props.Min)
                         local InitStart = math.min(ZeroScale, StartPercent)
@@ -2844,6 +3501,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local SearchPlaceholder = Props.SearchPlaceholder or "🔍 Search..."
                         local OnSearch = Props.OnSearch
                         local SelectionNotify = Props.SelectionNotify ~= false
+                        local GridPadding = Scale(6)
 
                         local function NotifyOnce(Message, Type)
                             local Key = tostring(Message)
@@ -2911,7 +3569,7 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         local GridLayout = CreateInstance("UIGridLayout", {
                             Parent = GridContainer,
-                            CellPadding = UDim2.new(0, Scale(6), 0, Scale(6)),
+                            CellPadding = UDim2.new(0, GridPadding, 0, GridPadding),
                             FillDirection = Enum.FillDirection.Horizontal,
                             HorizontalAlignment = Enum.HorizontalAlignment.Left,
                             VerticalAlignment = Enum.VerticalAlignment.Top,
@@ -2933,14 +3591,26 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local CellButtons = {}
                         local VisibleCells = {} -- For virtual scrolling
 
-                        local function CalculateCellSize()
-                            local ContainerWidth = GridContainer.AbsoluteSize.X - Scale(10)
-                            if ContainerWidth <= 0 then ContainerWidth = Scale(600) end
+                        local function CalculateCellSize(ItemCount)
+                            local ContainerWidth = math.floor(GridContainer.AbsoluteSize.X + 0.5)
+                            if ContainerWidth <= 0 then
+                                ContainerWidth = Scale(600)
+                            end
 
-                            local Calculated = math.floor(ContainerWidth / (MinCellWidth + Scale(6)))
-                            local Columns = math.clamp(Calculated, MinColumns, MaxColumns)
+                            local VisibleCount = math.max(1, ItemCount or #GridItems)
+                            local Columns = MinColumns
+                            for Candidate = math.min(MaxColumns, VisibleCount), MinColumns, -1 do
+                                local TotalPadding = (Candidate - 1) * GridPadding
+                                local CandidateWidth = (ContainerWidth - TotalPadding) / Candidate
+                                if CandidateWidth >= MinCellWidth then
+                                    Columns = Candidate
+                                    break
+                                end
+                            end
 
-                            local CellWidth = math.floor((ContainerWidth - ((Columns - 1) * Scale(6))) / Columns)
+                            Columns = math.max(1, Columns)
+                            local TotalPadding = (Columns - 1) * GridPadding
+                            local CellWidth = math.max(1, math.floor(((ContainerWidth - TotalPadding) / Columns) + 0.5))
                             return CellWidth, CellHeight, Columns
                         end
 
@@ -3230,7 +3900,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 CreateCell(Item, Index)
                             end
 
-                            local CellWidth, CellHeight = CalculateCellSize()
+                            local CellWidth, CellHeight = CalculateCellSize(#Filtered)
                             GridLayout.CellSize = UDim2.new(0, CellWidth, 0, CellHeight)
 
                             -- Update virtual scroll if enabled
@@ -3280,7 +3950,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         end)
 
                         GridContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-                            local CellWidth, CellHeight = CalculateCellSize()
+                            local CellWidth, CellHeight = CalculateCellSize(#FilterItems())
                             GridLayout.CellSize = UDim2.new(0, CellWidth, 0, CellHeight)
                         end)
 
@@ -3409,9 +4079,31 @@ function Library:Window(TitleOrIcon, WindowScale)
                 end
                 return SubFunctions
             end
+            function CategoryFunctions:GetSubCategories()
+                return SubCategoryObjects
+            end
             return CategoryFunctions
         end
+        table.insert(TabObjects, {Api = TabFunctions, IsActive = IsThisTabActive})
         return TabFunctions
+    end
+    function WindowFunctions:GetTabs()
+        local Result = {}
+        for _, TabObject in ipairs(TabObjects) do
+            table.insert(Result, TabObject.Api)
+        end
+        return Result
+    end
+
+    function WindowFunctions:SelectTab(TabOrIndex)
+        if type(TabOrIndex) == "number" then
+            local Target = TabObjects[TabOrIndex]
+            if Target and Target.Api and Target.Api.Select then
+                Target.Api:Select()
+            end
+        elseif type(TabOrIndex) == "table" and TabOrIndex.Select then
+            TabOrIndex:Select()
+        end
     end
     return WindowFunctions
 end
@@ -3535,10 +4227,19 @@ function Library:CreateModal(Title, Content, Options)
         task.wait(0.2)
         Modal:Destroy()
         Backdrop:Destroy()
+        if Library.ActivePopup and Library.ActivePopup.Element == Modal then
+            Library.ActivePopup = nil
+        end
     end
 
     CloseBtn.MouseButton1Click:Connect(CloseModal)
     Backdrop.MouseButton1Click:Connect(CloseModal)
+
+    RegisterPopup({
+        Element = Modal,
+        Ignore = {Modal},
+        Close = CloseModal
+    })
 
     return {
         Frame = Modal,
