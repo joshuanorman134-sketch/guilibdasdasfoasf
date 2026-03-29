@@ -18,6 +18,8 @@ Library.MainFrame = nil
 Library.Notifications = {}
 Library.ConfigEnabled = false
 Library.ConfigName = "SeraphConfig"
+Library.ConfigRootName = "SeraphConfig"
+Library.ConfigProfilePrefixEnabled = true
 Library.NotificationQueue = {}
 Library.Scale = 1
 Library.MaxNotifications = 5
@@ -29,6 +31,11 @@ Library.MainFrameBuildScale = 1
 Library.TooltipFrame = nil
 Library.ConfigProfiles = {}
 Library.ScrollLocks = {}
+Library.ConfigCallbacks = {
+    Loaded = {},
+    Saved = {},
+    Deleted = {}
+}
 Library.ConfigRules = {
     SaveDefaults = true,
     Include = nil,
@@ -90,6 +97,55 @@ end
 
 local function GetConfigFilePath(Name)
     return GetConfigBaseName(Name) .. ".json"
+end
+
+local function GetConfigRootName()
+    return GetConfigBaseName(Library.ConfigRootName or Library.ConfigName or "SeraphConfig")
+end
+
+local function GetDataFilePath(Key, ScopeName)
+    local BaseScope = GetConfigBaseName(ScopeName or GetConfigRootName())
+    return BaseScope .. "__" .. tostring(Key) .. ".json"
+end
+
+local function EscapeLuaPattern(Value)
+    return tostring(Value):gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+end
+
+local function IsOwnedConfigProfile(Name)
+    local CleanName = GetConfigBaseName(Name)
+    local RootName = GetConfigRootName()
+    if CleanName == RootName then
+        return true
+    end
+    return CleanName:match("^" .. EscapeLuaPattern(RootName .. "_")) ~= nil
+end
+
+local function NormalizeConfigProfileName(Name)
+    local CleanName = GetConfigBaseName(Name)
+    local RootName = GetConfigRootName()
+    if CleanName == "" then
+        return RootName
+    end
+    if not Library.ConfigProfilePrefixEnabled then
+        return CleanName
+    end
+    if IsOwnedConfigProfile(CleanName) then
+        return CleanName
+    end
+    return RootName .. "_" .. CleanName
+end
+
+local function FireConfigCallbacks(EventName, ProfileName)
+    local Callbacks = Library.ConfigCallbacks[EventName]
+    if not Callbacks then
+        return
+    end
+    for _, Callback in ipairs(Callbacks) do
+        task.spawn(function()
+            pcall(Callback, ProfileName)
+        end)
+    end
 end
 
 local function CreateTooltipFrame()
@@ -409,9 +465,13 @@ function Library:EnableConfig(Name)
     Library.ConfigEnabled = true
     if type(Name) == "table" then
         Library.ConfigName = GetConfigBaseName(Name.Name or Library.ConfigName)
+        Library.ConfigRootName = Library.ConfigName
+        Library.ConfigProfilePrefixEnabled = Name.ProfilePrefix ~= false
         Library:ConfigurePersistence(Name)
     else
         Library.ConfigName = GetConfigBaseName(Name)
+        Library.ConfigRootName = Library.ConfigName
+        Library.ConfigProfilePrefixEnabled = true
     end
 end
 
@@ -429,7 +489,7 @@ function Library:GetConfigProfiles()
 
     local function AddProfile(Name)
         local CleanName = GetConfigBaseName(Name)
-        if CleanName ~= "" and not Seen[CleanName] then
+        if CleanName ~= "" and IsOwnedConfigProfile(CleanName) and not Seen[CleanName] then
             Seen[CleanName] = true
             table.insert(Profiles, CleanName)
         end
@@ -471,7 +531,7 @@ function Library:SaveConfig(NameOrSilent, MaybeSilent)
     end
 
     if ProfileName then
-        Library.ConfigName = GetConfigBaseName(ProfileName)
+        Library.ConfigName = NormalizeConfigProfileName(ProfileName)
     end
 
     local Data = {}
@@ -508,6 +568,7 @@ function Library:SaveConfig(NameOrSilent, MaybeSilent)
 
     local Encoded = HttpService:JSONEncode(Data)
     writefile(GetConfigFilePath(Library.ConfigName), Encoded)
+    FireConfigCallbacks("Saved", Library.ConfigName)
     if not Silent then
         Library:Notify("Configuration saved: " .. Library.ConfigName, 2, "Success")
     end
@@ -526,7 +587,7 @@ function Library:LoadConfig(NameOrSilent, MaybeSilent)
     end
 
     if ProfileName then
-        Library.ConfigName = GetConfigBaseName(ProfileName)
+        Library.ConfigName = NormalizeConfigProfileName(ProfileName)
     end
 
     if isfile(GetConfigFilePath(Library.ConfigName)) then
@@ -549,6 +610,7 @@ function Library:LoadConfig(NameOrSilent, MaybeSilent)
                     end
                 end
             end
+            FireConfigCallbacks("Loaded", Library.ConfigName)
             if not Silent then
                 Library:Notify("Configuration loaded: " .. Library.ConfigName, 2, "Success")
             end
@@ -563,15 +625,62 @@ function Library:DeleteConfig(Name, Silent)
         return
     end
 
-    local ProfileName = GetConfigBaseName(Name)
+    local ProfileName = NormalizeConfigProfileName(Name)
     local Path = GetConfigFilePath(ProfileName)
     if isfile(Path) then
         delfile(Path)
+        FireConfigCallbacks("Deleted", ProfileName)
         if not Silent then
             Library:Notify("Configuration deleted: " .. ProfileName, 2, "Success")
         end
     elseif not Silent then
         Library:Notify("Missing config: " .. ProfileName, 2, "Warning")
+    end
+end
+
+function Library:OnConfigLoaded(Callback)
+    table.insert(Library.ConfigCallbacks.Loaded, Callback)
+    return Callback
+end
+
+function Library:OnConfigSaved(Callback)
+    table.insert(Library.ConfigCallbacks.Saved, Callback)
+    return Callback
+end
+
+function Library:OnConfigDeleted(Callback)
+    table.insert(Library.ConfigCallbacks.Deleted, Callback)
+    return Callback
+end
+
+function Library:WriteData(Key, Value, Options)
+    Options = Options or {}
+    local Scope = Options.Scope == "profile" and Library.ConfigName or GetConfigRootName()
+    writefile(GetDataFilePath(Key, Scope), HttpService:JSONEncode(Value))
+end
+
+function Library:ReadData(Key, DefaultValue, Options)
+    Options = Options or {}
+    local Scope = Options.Scope == "profile" and Library.ConfigName or GetConfigRootName()
+    local Path = GetDataFilePath(Key, Scope)
+    if not isfile or not isfile(Path) then
+        return DefaultValue
+    end
+    local Success, Decoded = pcall(function()
+        return HttpService:JSONDecode(readfile(Path))
+    end)
+    if Success then
+        return Decoded
+    end
+    return DefaultValue
+end
+
+function Library:DeleteData(Key, Options)
+    Options = Options or {}
+    local Scope = Options.Scope == "profile" and Library.ConfigName or GetConfigRootName()
+    local Path = GetDataFilePath(Key, Scope)
+    if isfile and isfile(Path) then
+        delfile(Path)
     end
 end
 
@@ -2649,10 +2758,16 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                     function SectionFunctions:ConfigManager(Props)
                         Props = Props or {}
+                        local IsCompact = Props.Compact == true
+                        local ListHeight = Props.ListHeight or (IsCompact and Scale(36) or Scale(58))
+                        local SummaryY = IsCompact and Scale(78) or Scale(82)
+                        local ActiveY = IsCompact and Scale(94) or Scale(100)
+                        local ListY = IsCompact and Scale(112) or Scale(116)
+                        local ManagerHeight = Props.Height or (ListY + ListHeight)
                         local ManagerFrame = CreateInstance("Frame", {
                             Parent = ElementsContainer,
                             BackgroundTransparency = 1,
-                            Size = UDim2.new(1, 0, 0, Scale(176)),
+                            Size = UDim2.new(1, 0, 0, ManagerHeight),
                             BorderSizePixel = 0
                         })
 
@@ -2669,7 +2784,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local InputContainer = CreateInstance("Frame", {
                             Parent = ManagerFrame,
                             BorderSizePixel = 0,
-                            Position = UDim2.new(0, 0, 0, Scale(20)),
+                            Position = UDim2.new(0, 0, 0, Scale(18)),
                             Size = UDim2.new(1, 0, 0, Scale(24))
                         }, {BackgroundColor3 = "ElementBg"})
 
@@ -2691,7 +2806,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local Actions = CreateInstance("Frame", {
                             Parent = ManagerFrame,
                             BackgroundTransparency = 1,
-                            Position = UDim2.new(0, 0, 0, Scale(50)),
+                            Position = UDim2.new(0, 0, 0, Scale(48)),
                             Size = UDim2.new(1, 0, 0, Scale(26)),
                             BorderSizePixel = 0
                         })
@@ -2705,30 +2820,32 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local ProfilesLabel = CreateInstance("TextLabel", {
                             Parent = ManagerFrame,
                             BackgroundTransparency = 1,
-                            Position = UDim2.new(0, 0, 0, Scale(82)),
+                            Position = UDim2.new(0, 0, 0, SummaryY),
                             Size = UDim2.new(1, 0, 0, Scale(14)),
                             FontFace = Config.Font,
                             TextSize = Scale(10),
                             TextXAlignment = Enum.TextXAlignment.Left,
+                            TextTruncate = Enum.TextTruncate.AtEnd,
                             Text = ""
                         }, {TextColor3 = "TextMain"})
 
                         local ActiveLabel = CreateInstance("TextLabel", {
                             Parent = ManagerFrame,
                             BackgroundTransparency = 1,
-                            Position = UDim2.new(0, 0, 0, Scale(100)),
+                            Position = UDim2.new(0, 0, 0, ActiveY),
                             Size = UDim2.new(1, 0, 0, Scale(14)),
                             FontFace = Config.Font,
                             TextSize = Scale(10),
                             TextXAlignment = Enum.TextXAlignment.Left,
+                            TextTruncate = Enum.TextTruncate.AtEnd,
                             Text = ""
                         }, {TextColor3 = "TextLight"})
 
                         local ListWidget = SectionFunctions:List({
                             Parent = ManagerFrame,
-                            Position = UDim2.new(0, 0, 0, Scale(116)),
+                            Position = UDim2.new(0, 0, 0, ListY),
                             Title = nil,
-                            Height = Scale(58),
+                            Height = ListHeight,
                             EmptyText = "No saved profiles",
                             Items = {},
                             Callback = function(Item)
@@ -2738,12 +2855,12 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         local function GetSelectedProfile()
                             local Raw = ProfileInput.Text ~= "" and ProfileInput.Text or Library.ConfigName
-                            return GetConfigBaseName(Raw)
+                            return NormalizeConfigProfileName(Raw)
                         end
 
                         local function RefreshProfiles()
                             local Profiles = Library:GetConfigProfiles()
-                            ProfilesLabel.Text = "Profiles: " .. (#Profiles > 0 and table.concat(Profiles, ", ") or "None")
+                            ProfilesLabel.Text = "Profiles (" .. tostring(#Profiles) .. "): " .. (#Profiles > 0 and table.concat(Profiles, ", ") or "None")
                             ActiveLabel.Text = "Active: " .. Library.ConfigName
                             ListWidget:SetItems(Profiles)
                         end
@@ -2796,7 +2913,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             return GetSelectedProfile()
                         end
                         function ManagerFunctions:SetValue(Value)
-                            ProfileInput.Text = GetConfigBaseName(Value)
+                            ProfileInput.Text = NormalizeConfigProfileName(Value)
                         end
                         function ManagerFunctions:Refresh()
                             RefreshProfiles()
@@ -3677,6 +3794,16 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local OnSearch = Props.OnSearch
                         local SelectionNotify = Props.SelectionNotify ~= false
                         local GridPadding = Scale(6)
+                        local GridAccentColor = Props.AccentColor or Config.Colors.Accent
+                        local SelectedBadge = Props.SelectedBadge
+                        local SelectedBadgeBackgroundColor = Props.SelectedBadgeBackgroundColor or Config.Colors.Separator
+                        local SelectedBadgeTextColor = Props.SelectedBadgeTextColor or GridAccentColor
+                        local SelectedBadgeBorderColor = Props.SelectedBadgeBorderColor or GridAccentColor
+                        local LeftBorderColor = Props.LeftBorderColor
+                        local NameColor = Props.NameColor
+                        local OnSelectionVisual = Props.OnSelectionVisual
+                        local ViewportOptions = Props.Viewport or {}
+                        local ViewportRotateDefault = ViewportOptions.Rotate ~= false
 
                         local function NotifyOnce(Message, Type)
                             local Key = tostring(Message)
@@ -3766,6 +3893,159 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local CellButtons = {}
                         local VisibleCells = {} -- For virtual scrolling
 
+                        local function ResolveItemValue(Value, Item, DefaultValue)
+                            if Value == nil then
+                                return DefaultValue
+                            end
+                            if type(Value) == "function" then
+                                local Success, Result = pcall(Value, Item)
+                                if Success and Result ~= nil then
+                                    return Result
+                                end
+                                return DefaultValue
+                            end
+                            return Value
+                        end
+
+                        local function CreateViewportFallback(Item, ContentContainer)
+                            local FallbackText = ResolveItemValue(ViewportOptions.FallbackText, Item, nil)
+                            if not FallbackText then
+                                return nil
+                            end
+
+                            return CreateInstance("TextLabel", {
+                                Parent = ContentContainer,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(1, 0, 1, 0),
+                                FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
+                                Text = tostring(FallbackText),
+                                TextColor3 = ResolveItemValue(ViewportOptions.FallbackTextColor, Item, Color3.fromRGB(100, 100, 100)),
+                                TextScaled = true
+                            })
+                        end
+
+                        local function CleanupViewportCacheForCell(CellFrame)
+                            local Cached = Library.ViewportCache[CellFrame]
+                            if not Cached then
+                                return
+                            end
+                            if type(Cached) == "table" then
+                                if Cached.Cleanup then
+                                    for _, Entry in ipairs(Cached.Cleanup) do
+                                        if typeof(Entry) == "RBXScriptConnection" then
+                                            Entry:Disconnect()
+                                        elseif type(Entry) == "function" then
+                                            pcall(Entry)
+                                        end
+                                    end
+                                end
+                                if Cached.Viewport and Cached.Viewport.Parent then
+                                    Cached.Viewport:Destroy()
+                                end
+                            elseif Cached.Parent then
+                                Cached:Destroy()
+                            end
+                            Library.ViewportCache[CellFrame] = nil
+                        end
+
+                        local function SetupViewportContent(Item, CellBtn, ContentContainer)
+                            local GetModel = ViewportOptions.GetModel or Props.GetViewportModel
+                            if not GetModel then
+                                return nil
+                            end
+
+                            local Success, Source = pcall(GetModel, Item, CellBtn, ContentContainer)
+                            if not Success or not Source then
+                                return CreateViewportFallback(Item, ContentContainer)
+                            end
+
+                            local Viewport = CreateInstance("ViewportFrame", {
+                                Parent = ContentContainer,
+                                BackgroundTransparency = ResolveItemValue(ViewportOptions.BackgroundTransparency, Item, 1),
+                                Size = UDim2.new(1, 0, 1, 0),
+                                BorderSizePixel = 0
+                            })
+                            Viewport.BackgroundColor3 = ResolveItemValue(ViewportOptions.BackgroundColor, Item, Config.Colors.ElementBg)
+
+                            local CornerRadius = ResolveItemValue(ViewportOptions.CornerRadius, Item, nil)
+                            if CornerRadius then
+                                CreateInstance("UICorner", {Parent = Viewport, CornerRadius = CornerRadius})
+                            end
+
+                            Viewport.Ambient = ResolveItemValue(ViewportOptions.Ambient, Item, Color3.fromRGB(200, 200, 210))
+                            Viewport.LightColor = ResolveItemValue(ViewportOptions.LightColor, Item, Color3.fromRGB(255, 244, 220))
+                            Viewport.LightDirection = ResolveItemValue(ViewportOptions.LightDirection, Item, Vector3.new(-1, -0.6, -0.8))
+
+                            local Model = Source:Clone()
+                            Model.Parent = Viewport
+
+                            local PreviewRotation = ResolveItemValue(ViewportOptions.RotationCFrame, Item, CFrame.new())
+                            local BoundingCFrame
+                            local Extents
+
+                            if Model:IsA("Model") then
+                                Model:PivotTo(CFrame.new() * PreviewRotation)
+                                for _, Descendant in ipairs(Model:GetDescendants()) do
+                                    if Descendant:IsA("BasePart") then
+                                        Descendant.Anchored = true
+                                    end
+                                end
+                                BoundingCFrame, Extents = Model:GetBoundingBox()
+                            elseif Model:IsA("BasePart") then
+                                Model.CFrame = CFrame.new() * PreviewRotation
+                                Model.Anchored = true
+                                BoundingCFrame = Model.CFrame
+                                Extents = Model.Size
+                            else
+                                Viewport:Destroy()
+                                return CreateViewportFallback(Item, ContentContainer)
+                            end
+
+                            local Camera = Instance.new("Camera")
+                            Camera.FieldOfView = ResolveItemValue(ViewportOptions.FieldOfView, Item, 32)
+                            Viewport.CurrentCamera = Camera
+
+                            local ModelCenter = BoundingCFrame.Position
+                            local MaxDim = math.max(Extents.X, Extents.Y, Extents.Z)
+                            local DistanceMultiplier = ResolveItemValue(ViewportOptions.DistanceMultiplier, Item, 1.2)
+                            local Distance = (MaxDim / 2) / math.tan(math.rad(Camera.FieldOfView / 2)) * DistanceMultiplier
+                            local CameraOffset = ResolveItemValue(
+                                ViewportOptions.CameraOffset,
+                                Item,
+                                Vector3.new(Distance * 0.9, Extents.Y * 0.1, Distance * 0.9)
+                            )
+                            local CameraFocusOffset = ResolveItemValue(
+                                ViewportOptions.CameraFocusOffset,
+                                Item,
+                                Vector3.new(0, Extents.Y * 0.05, 0)
+                            )
+                            Camera.CFrame = CFrame.new(ModelCenter + CameraOffset, ModelCenter + CameraFocusOffset)
+
+                            local Cleanup = {}
+                            local RotateEnabled = ResolveItemValue(ViewportOptions.Rotate, Item, ViewportRotateDefault)
+                            if RotateEnabled then
+                                local RotateSpeed = ResolveItemValue(ViewportOptions.RotateSpeed, Item, 1.5)
+                                local Connection = RunService.RenderStepped:Connect(function()
+                                    if not Model.Parent or not Viewport.Parent then
+                                        return
+                                    end
+                                    local Rotation = tick() * RotateSpeed
+                                    if Model:IsA("Model") then
+                                        Model:PivotTo(CFrame.new(ModelCenter) * PreviewRotation * CFrame.Angles(0, Rotation, 0))
+                                    elseif Model:IsA("BasePart") then
+                                        Model.CFrame = CFrame.new(ModelCenter) * PreviewRotation * CFrame.Angles(0, Rotation, 0)
+                                    end
+                                end)
+                                table.insert(Cleanup, Connection)
+                            end
+
+                            Library.ViewportCache[CellBtn] = {
+                                Viewport = Viewport,
+                                Cleanup = Cleanup
+                            }
+                            return Viewport
+                        end
+
                         local function GetItemKey(Item)
                             if type(Item) == "table" then
                                 return tostring(Item.Name or Item.Id or Item.Value or "")
@@ -3846,7 +4126,7 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                             local backgroundTransparency = IsSelected and 0.02 or 0.18
                             local backgroundColor = IsSelected and Config.Colors.SectionBg or Config.Colors.ElementBg
-                            local strokeColor = IsSelected and Config.Colors.Accent or Config.Colors.Border
+                            local strokeColor = IsSelected and GridAccentColor or Config.Colors.Border
 
                             TweenService:Create(CellBtn.Frame, CreateTween(0.15), {
                                 BackgroundTransparency = backgroundTransparency,
@@ -3861,6 +4141,25 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                             if CellBtn.Checkmark then
                                 CellBtn.Checkmark.Visible = IsSelected
+                                CellBtn.Checkmark.TextColor3 = GridAccentColor
+                            end
+
+                            if CellBtn.SelectedBadge then
+                                CellBtn.SelectedBadge.Visible = IsSelected
+                            end
+
+                            if CellBtn.LeftBorder then
+                                local DefaultBorder = ResolveItemValue(LeftBorderColor, CellBtn.Item, nil)
+                                local BorderColor = IsSelected and GridAccentColor or DefaultBorder
+                                if BorderColor then
+                                    TweenService:Create(CellBtn.LeftBorder, CreateTween(0.15), {
+                                        BackgroundColor3 = BorderColor
+                                    }):Play()
+                                end
+                            end
+
+                            if OnSelectionVisual then
+                                pcall(OnSelectionVisual, CellBtn, IsSelected, CellBtn.Item)
                             end
                         end
 
@@ -3941,6 +4240,41 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 ZIndex = 5
                             })
 
+                            local LeftBorder = nil
+                            local DefaultLeftBorderColor = ResolveItemValue(LeftBorderColor, Item, nil)
+                            if DefaultLeftBorderColor then
+                                LeftBorder = CreateInstance("Frame", {
+                                    Parent = CellBtn,
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(0, Scale(3), 1, 0),
+                                    Position = UDim2.new(0, 0, 0, 0),
+                                    ZIndex = 3
+                                })
+                                LeftBorder.BackgroundColor3 = DefaultLeftBorderColor
+                                CreateInstance("UICorner", {Parent = LeftBorder, CornerRadius = UDim.new(0, Scale(2))})
+                            end
+
+                            local SelectedBadgeLabel = nil
+                            local BadgeText = ResolveItemValue(SelectedBadge, Item, nil)
+                            if BadgeText then
+                                SelectedBadgeLabel = CreateInstance("TextLabel", {
+                                    Parent = CellBtn,
+                                    BackgroundTransparency = 0,
+                                    Size = UDim2.new(0.55, 0, 0, Scale(16)),
+                                    Position = UDim2.new(0, Scale(6), 1, Scale(-20)),
+                                    FontFace = Font.new("rbxasset://fonts/families/GothamSSm.json", Enum.FontWeight.Bold),
+                                    Text = tostring(BadgeText),
+                                    TextSize = Scale(8),
+                                    Visible = false,
+                                    ZIndex = 5
+                                })
+                                SelectedBadgeLabel.BackgroundColor3 = ResolveItemValue(SelectedBadgeBackgroundColor, Item, Config.Colors.Separator)
+                                SelectedBadgeLabel.TextColor3 = ResolveItemValue(SelectedBadgeTextColor, Item, GridAccentColor)
+                                CreateInstance("UICorner", {Parent = SelectedBadgeLabel, CornerRadius = UDim.new(0, Scale(4))})
+                                local SelectedBadgeStroke = CreateInstance("UIStroke", {Parent = SelectedBadgeLabel, Thickness = 1})
+                                SelectedBadgeStroke.Color = ResolveItemValue(SelectedBadgeBorderColor, Item, GridAccentColor)
+                            end
+
                             local StarBtn = CreateInstance("TextButton", {
                                 Parent = CellBtn,
                                 BackgroundTransparency = 1,
@@ -3967,16 +4301,18 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 BorderSizePixel = 0
                             })
 
-                            if RenderType == "ViewportFrame" and OnRender then
-                                -- Custom ViewportFrame rendering
-                                local Viewport = OnRender(Item, ContentContainer)
+                            if RenderType == "ViewportFrame" then
+                                local Viewport = nil
+                                if OnRender then
+                                    Viewport = OnRender(Item, ContentContainer, CellBtn)
+                                end
+                                if not Viewport then
+                                    Viewport = SetupViewportContent(Item, CellBtn, ContentContainer)
+                                end
                                 if Viewport then
                                     Viewport.Parent = ContentContainer
                                     Viewport.Size = UDim2.new(1, 0, 1, 0)
                                     Viewport.BackgroundTransparency = 1
-
-                                    -- Cache for cleanup
-                                    Library.ViewportCache[CellBtn] = Viewport
                                 end
                             elseif RenderType == "Custom" and OnRender then
                                 -- Fully custom rendering
@@ -4006,11 +4342,12 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 TextWrapped = true,
                                 TextColor3 = Config.Colors.TextLight
                             })
+                            NameLabel.TextColor3 = ResolveItemValue(NameColor, Item, Config.Colors.TextLight)
 
                             CellBtn.MouseEnter:Connect(function()
                                 if not table.find(Selected, Item) then
                                     TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.08}):Play()
-                                    if Stroke then TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Accent}):Play() end
+                                    if Stroke then TweenService:Create(Stroke, CreateTween(0.1), {Color = GridAccentColor}):Play() end
                                 end
                             end)
 
@@ -4028,7 +4365,9 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     Stroke = Stroke,
                                     Item = Item,
                                     Checkmark = Checkmark,
-                                    Star = StarBtn
+                                    Star = StarBtn,
+                                    LeftBorder = LeftBorder,
+                                    SelectedBadge = SelectedBadgeLabel
                                 })
                             end)
 
@@ -4038,6 +4377,8 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 Item = Item,
                                 Checkmark = Checkmark,
                                 Star = StarBtn,
+                                LeftBorder = LeftBorder,
+                                SelectedBadge = SelectedBadgeLabel,
                                 Index = Index
                             }
                             table.insert(CellButtons, CellData)
@@ -4067,9 +4408,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             for _, Cell in ipairs(CellButtons) do
                                 if Cell.Frame then
                                     -- Cleanup ViewportFrames
-                                    if Library.ViewportCache[Cell.Frame] then
-                                        Library.ViewportCache[Cell.Frame] = nil
-                                    end
+                                    CleanupViewportCacheForCell(Cell.Frame)
                                     Cell.Frame:Destroy()
                                 end
                             end
@@ -4233,6 +4572,12 @@ function Library:Window(TitleOrIcon, WindowScale)
                             RefreshGrid()
                         end
 
+                        function GridFunctions:ApplySelectionVisuals()
+                            for _, Cell in ipairs(CellButtons) do
+                                ApplySelectionVisualState(Cell, SelectedKeys[GetItemKey(Cell.Item)] == true)
+                            end
+                        end
+
                         -- Config serialization support
                         local GridFlagData = {
                             SetValue = GridFunctions.SetValue,
@@ -4321,7 +4666,20 @@ function Library:Destroy()
     end
     -- Cleanup viewport cache
     for _, viewport in pairs(Library.ViewportCache) do
-        if viewport and viewport.Parent then
+        if type(viewport) == "table" then
+            if viewport.Cleanup then
+                for _, Entry in ipairs(viewport.Cleanup) do
+                    if typeof(Entry) == "RBXScriptConnection" then
+                        Entry:Disconnect()
+                    elseif type(Entry) == "function" then
+                        pcall(Entry)
+                    end
+                end
+            end
+            if viewport.Viewport and viewport.Viewport.Parent then
+                viewport.Viewport:Destroy()
+            end
+        elseif viewport and viewport.Parent then
             viewport:Destroy()
         end
     end
