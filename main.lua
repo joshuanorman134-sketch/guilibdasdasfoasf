@@ -1283,7 +1283,7 @@ function Library:Window(TitleOrIcon, WindowScale)
         Parent = Body,
         BackgroundTransparency = 1,
         Position = UDim2.new(0, Scale(10), 0, Scale(10)),
-        Size = UDim2.new(0, Scale(120), 1, Scale(-20))
+        Size = UDim2.new(0, Scale(132), 1, Scale(-20))
     })
 
     CreateInstance("TextLabel", {
@@ -1312,8 +1312,8 @@ function Library:Window(TitleOrIcon, WindowScale)
     local ContentArea = CreateInstance("Frame", {
         Parent = Body,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, Scale(140), 0, Scale(10)),
-        Size = UDim2.new(1, Scale(-155), 1, Scale(-20))
+        Position = UDim2.new(0, Scale(152), 0, Scale(10)),
+        Size = UDim2.new(1, Scale(-167), 1, Scale(-20))
     })
 
     CreateInstance("TextLabel", {
@@ -3564,6 +3564,17 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         CreateInstance("UICorner", {Parent = SliderBg, CornerRadius = UDim.new(0, Scale(2))})
 
+                        local SliderInputArea = CreateInstance("TextButton", {
+                            Parent = SliderFrame,
+                            BackgroundTransparency = 1,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, Scale(14)),
+                            Size = UDim2.new(1, 0, 0, Scale(16)),
+                            Text = "",
+                            AutoButtonColor = false,
+                            ZIndex = SliderBg.ZIndex + 2
+                        })
+
                         local SliderFill = CreateInstance("Frame", {
                             Parent = SliderBg,
                             BorderSizePixel = 0,
@@ -3608,7 +3619,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local SliderFunctions = {}
                         local CurrentValue
                         local PresetButtons = {}
-                        local InteractiveTargets = {SliderBg}
+                        local InteractiveTargets = {SliderInputArea}
 
                         local function SnapValue(Val)
                             local Numeric = tonumber(Val) or ZeroValue
@@ -3645,7 +3656,7 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         ValueLabel.Text = FormatValue(CurrentValue)
 
-                        SliderBg.InputBegan:Connect(function(Input)
+                        SliderInputArea.InputBegan:Connect(function(Input)
                             if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
                                 local function Update(InputVec)
                                     local Pos = math.clamp((InputVec.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
@@ -4483,9 +4494,15 @@ function Library:Window(TitleOrIcon, WindowScale)
                             RefreshGrid()
                         end)
 
+                        local LastGridWidth = nil
                         GridContainer:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
-                            local CellWidth, CellHeight = CalculateCellSize(#FilterItems())
-                            GridLayout.CellSize = UDim2.new(0, CellWidth, 0, CellHeight)
+                            local CurrentWidth = math.floor(GridContainer.AbsoluteSize.X + 0.5)
+                            if CurrentWidth <= 0 or CurrentWidth == LastGridWidth then
+                                return
+                            end
+
+                            LastGridWidth = CurrentWidth
+                            RefreshGrid()
                         end)
 
                         -- Grid Functions
