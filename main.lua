@@ -128,7 +128,7 @@ function Library:EnableConfig(Name)
     Library.ConfigName = Name or "SeraphConfig"
 end
 
-function Library:SaveConfig()
+function Library:SaveConfig(Silent)
     if not Library.ConfigEnabled then return end
 
     local Data = {}
@@ -147,10 +147,12 @@ function Library:SaveConfig()
 
     local Encoded = HttpService:JSONEncode(Data)
     writefile(Library.ConfigName .. ".json", Encoded)
-    Library:Notify("Configuration saved", 2, "Success")
+    if not Silent then
+        Library:Notify("Configuration saved", 2, "Success")
+    end
 end
 
-function Library:LoadConfig()
+function Library:LoadConfig(Silent)
     if not Library.ConfigEnabled then return end
 
     if isfile(Library.ConfigName .. ".json") then
@@ -168,7 +170,9 @@ function Library:LoadConfig()
                     end
                 end
             end
-            Library:Notify("Configuration loaded", 2, "Success")
+            if not Silent then
+                Library:Notify("Configuration loaded", 2, "Success")
+            end
         end
     end
 end
@@ -695,6 +699,12 @@ function Library:Window(TitleOrIcon, WindowScale)
     end)
 
     CloseButton.MouseButton1Click:Connect(function()
+        if Library.CloseCallback then
+            local ok, handled = pcall(Library.CloseCallback)
+            if ok and handled then
+                return
+            end
+        end
         local Tween = TweenService:Create(MainFrame, CreateTween(0.3), {GroupTransparency = 1})
         local StrokeTween = TweenService:Create(MainStroke, CreateTween(0.3), {Transparency = 1})
         Tween:Play()
@@ -1379,7 +1389,12 @@ function Library:Window(TitleOrIcon, WindowScale)
                         end)
 
                         local InputFunctions = {}
-                        function InputFunctions:SetValue(Val) TextBox.Text = tostring(Val) end
+                        function InputFunctions:SetValue(Val)
+                            TextBox.Text = tostring(Val)
+                            if Props.Callback then
+                                Props.Callback(TextBox.Text, false)
+                            end
+                        end
                         function InputFunctions:GetValue() return TextBox.Text end
 
                         if Props.Flag then Library.Flags[Props.Flag] = InputFunctions end
