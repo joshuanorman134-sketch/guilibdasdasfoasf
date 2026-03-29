@@ -66,9 +66,23 @@ local function CreateTween(Time, Style, Direction)
 end
 
 local function CreateInstance(Class, Properties, ThemeProps)
-    local Inst = Instance.new(Class)
+    local Inst
+    local OkCreate, Created = pcall(Instance.new, Class)
+    if OkCreate then
+        Inst = Created
+    elseif Class == "CanvasGroup" then
+        Inst = Instance.new("Frame")
+    else
+        error(Created)
+    end
+
     for Key, Value in Properties do
-        Inst[Key] = Value
+        local OkAssign, Err = pcall(function()
+            Inst[Key] = Value
+        end)
+        if not OkAssign and Key ~= "GroupTransparency" then
+            error(Err)
+        end
     end
     if ThemeProps then
         for Prop, ColorKey in ThemeProps do
@@ -81,6 +95,27 @@ end
 
 local function Scale(Value)
     return math.floor(Value * Library.Scale)
+end
+
+local function SupportsGroupTransparency(GuiObject)
+    if not GuiObject then
+        return false
+    end
+
+    return pcall(function()
+        local _ = GuiObject.GroupTransparency
+        return _
+    end)
+end
+
+local function PlayGroupTransparencyTween(GuiObject, Time, Target)
+    if not SupportsGroupTransparency(GuiObject) then
+        return nil
+    end
+
+    local Tween = TweenService:Create(GuiObject, CreateTween(Time), {GroupTransparency = Target})
+    Tween:Play()
+    return Tween
 end
 
 local function GetConfigBaseName(Name)
@@ -226,6 +261,165 @@ local function SetGuiInteractable(Gui, Enabled)
     else
         Gui.Active = Enabled
     end
+end
+
+local function StopTween(TweenState, Key)
+    local ActiveTween = TweenState[Key]
+    if ActiveTween then
+        pcall(function()
+            ActiveTween:Cancel()
+        end)
+        TweenState[Key] = nil
+    end
+end
+
+local function PlayTrackedTween(TweenState, Key, GuiObject, Time, Properties, Style, Direction)
+    if not GuiObject or not Properties then
+        return
+    end
+
+    StopTween(TweenState, Key)
+
+    local Tween = TweenService:Create(GuiObject, CreateTween(Time, Style, Direction), Properties)
+    TweenState[Key] = Tween
+    Tween.Completed:Connect(function()
+        if TweenState[Key] == Tween then
+            TweenState[Key] = nil
+        end
+    end)
+    Tween:Play()
+    return Tween
+end
+
+local function CreateInteractiveFeedback(Options)
+    local State = {
+        Hovered = false,
+        Pressed = false,
+        Focused = false,
+        Disabled = false
+    }
+    local Targets = Options.Targets or {}
+    local Interactive = Options.Interactive or {}
+    local TweenState = {}
+    local Connections = {}
+
+    local function ApplyVisual(Name, Immediate)
+        local Visual = Options[Name] or Options.Default or {}
+        for Key, Target in pairs(Targets) do
+            local Props = Visual[Key]
+            if Props and Target.Object then
+                if Immediate then
+                    StopTween(TweenState, Key)
+                    for Property, Value in pairs(Props) do
+                        Target.Object[Property] = Value
+                    end
+                else
+                    PlayTrackedTween(
+                        TweenState,
+                        Key,
+                        Target.Object,
+                        Target.Time or 0.12,
+                        Props,
+                        Target.Style,
+                        Target.Direction
+                    )
+                end
+            end
+        end
+    end
+
+    local function ResolveVisualState()
+        if State.Disabled and Options.Disabled then
+            return "Disabled"
+        end
+        if State.Pressed and Options.Pressed then
+            return "Pressed"
+        end
+        if State.Focused and Options.Focused then
+            return "Focused"
+        end
+        if State.Hovered and Options.Hover then
+            return "Hover"
+        end
+        return "Default"
+    end
+
+    local function Refresh(Immediate)
+        ApplyVisual(ResolveVisualState(), Immediate)
+    end
+
+    for _, Gui in ipairs(Interactive) do
+        if Gui then
+            if Gui.MouseEnter then
+                table.insert(Connections, Gui.MouseEnter:Connect(function()
+                    if State.Disabled then
+                        return
+                    end
+                    State.Hovered = true
+                    Refresh()
+                end))
+            end
+
+            if Gui.MouseLeave then
+                table.insert(Connections, Gui.MouseLeave:Connect(function()
+                    State.Hovered = false
+                    State.Pressed = false
+                    Refresh()
+                end))
+            end
+
+            if Gui.InputBegan then
+                table.insert(Connections, Gui.InputBegan:Connect(function(Input)
+                    if State.Disabled then
+                        return
+                    end
+                    if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+                        State.Pressed = true
+                        Refresh()
+                    end
+                end))
+            end
+
+            if Gui.InputEnded then
+                table.insert(Connections, Gui.InputEnded:Connect(function(Input)
+                    if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+                        State.Pressed = false
+                        Refresh()
+                    end
+                end))
+            end
+        end
+    end
+
+    Refresh(true)
+
+    return {
+        SetDisabled = function(_, Disabled)
+            State.Disabled = Disabled and true or false
+            if State.Disabled then
+                State.Hovered = false
+                State.Pressed = false
+            end
+            Refresh()
+        end,
+        SetFocused = function(_, Focused)
+            State.Focused = Focused and true or false
+            Refresh()
+        end,
+        Refresh = function(_, Immediate)
+            Refresh(Immediate)
+        end,
+        Destroy = function()
+            for _, Connection in ipairs(Connections) do
+                pcall(function()
+                    Connection:Disconnect()
+                end)
+            end
+            for Key in pairs(TweenState) do
+                StopTween(TweenState, Key)
+            end
+        end
+    }
 end
 
 local function AttachControlStateApi(Control, Options)
@@ -664,7 +858,7 @@ function Library:Confirm(Title, Message, Callback, Options)
         end)
 
         Btn.MouseButton1Click:Connect(function()
-            TweenService:Create(Dialog, CreateTween(0.2), {GroupTransparency = 1}):Play()
+            PlayGroupTransparencyTween(Dialog, 0.2, 1)
             TweenService:Create(Backdrop, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
             task.wait(0.2)
             Dialog:Destroy()
@@ -680,7 +874,7 @@ function Library:Confirm(Title, Message, Callback, Options)
         Element = Dialog,
         Ignore = {Dialog},
         Close = function()
-            TweenService:Create(Dialog, CreateTween(0.2), {GroupTransparency = 1}):Play()
+            PlayGroupTransparencyTween(Dialog, 0.2, 1)
             TweenService:Create(Backdrop, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
             task.wait(0.2)
             if Dialog.Parent then Dialog:Destroy() end
@@ -905,20 +1099,23 @@ UserInputService.InputBegan:Connect(function(Input, Processed)
         Library.WindowVisible = not Library.WindowVisible
         if Library.WindowVisible then
             Library.MainFrame.Visible = true
-            TweenService:Create(Library.MainFrame, CreateTween(0.2), {GroupTransparency = 0}):Play()
+            PlayGroupTransparencyTween(Library.MainFrame, 0.2, 0)
             local Stroke = Library.MainFrame:FindFirstChild("UIStroke")
             if Stroke then
                 TweenService:Create(Stroke, CreateTween(0.2), {Transparency = 0}):Play()
             end
         else
-            local Tween = TweenService:Create(Library.MainFrame, CreateTween(0.2), {GroupTransparency = 1})
+            local Tween = PlayGroupTransparencyTween(Library.MainFrame, 0.2, 1)
             local Stroke = Library.MainFrame:FindFirstChild("UIStroke")
             if Stroke then
                 TweenService:Create(Stroke, CreateTween(0.2), {Transparency = 1}):Play()
             end
-            Tween:Play()
             task.spawn(function()
-                Tween.Completed:Wait()
+                if Tween then
+                    Tween.Completed:Wait()
+                else
+                    task.wait(0.2)
+                end
                 if not Library.WindowVisible then
                     Library.MainFrame.Visible = false
                 end
@@ -1132,11 +1329,14 @@ function Library:Window(TitleOrIcon, WindowScale)
                 return
             end
         end
-        local Tween = TweenService:Create(MainFrame, CreateTween(0.3), {GroupTransparency = 1})
+        local Tween = PlayGroupTransparencyTween(MainFrame, 0.3, 1)
         local StrokeTween = TweenService:Create(MainStroke, CreateTween(0.3), {Transparency = 1})
-        Tween:Play()
         StrokeTween:Play()
-        Tween.Completed:Wait()
+        if Tween then
+            Tween.Completed:Wait()
+        else
+            task.wait(0.3)
+        end
         MainFrame.Visible = false
         Library.WindowVisible = false
         MainStroke.Transparency = 0
@@ -1250,6 +1450,16 @@ function Library:Window(TitleOrIcon, WindowScale)
     local TabObjects = {}
 
     function WindowFunctions:AddTab(IconAsset)
+        local RequestedIcon = Config.FallbackTabIcon
+        if type(IconAsset) == "string" then
+            RequestedIcon = IconAsset ~= "" and IconAsset or Config.FallbackTabIcon
+        elseif type(IconAsset) == "table" then
+            local FirstIcon = IconAsset[1]
+            if type(FirstIcon) == "string" and FirstIcon ~= "" then
+                RequestedIcon = FirstIcon
+            end
+        end
+
         local TabButton = CreateInstance("ImageButton", {
             Parent = TabContainer,
             BackgroundTransparency = 1,
@@ -1267,7 +1477,7 @@ function Library:Window(TitleOrIcon, WindowScale)
             Size = UDim2.new(0, Scale(18), 0, Scale(18)),
             Position = UDim2.new(0.5, 0, 0.5, 0),
             AnchorPoint = Vector2.new(0.5, 0.5),
-            Image = IconAsset[1] or Config.FallbackTabIcon
+            Image = RequestedIcon
         }, {ImageColor3 = "TextMain"})
 
         -- Fallback handling for tab icons
@@ -1279,6 +1489,11 @@ function Library:Window(TitleOrIcon, WindowScale)
         
         checkIcon()
         IconImg:GetPropertyChangedSignal("IsLoaded"):Connect(checkIcon)        
+        task.delay(1, function()
+            if IconImg.Parent and (not IconImg.IsLoaded or IconImg.ImageRectSize == Vector2.zero) then
+                IconImg.Image = Config.FallbackTabIcon
+            end
+        end)
 
         table.insert(AllTabs, TabButton)
 
@@ -2760,12 +2975,29 @@ function Library:Window(TitleOrIcon, WindowScale)
                             }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
                             CreateInstance("UICorner", {Parent = Button, CornerRadius = UDim.new(0, Scale(4))})
                             local Stroke = CreateInstance("UIStroke", {Parent = Button, Thickness = 1}, {Color = "Border"})
-                            Button.MouseEnter:Connect(function()
-                                TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
-                            end)
-                            Button.MouseLeave:Connect(function()
-                                TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                            end)
+                            CreateInteractiveFeedback({
+                                Interactive = {Button},
+                                Targets = {
+                                    Surface = {Object = Button, Time = 0.1},
+                                    Stroke = {Object = Stroke, Time = 0.1},
+                                    Text = {Object = Button, Time = 0.1}
+                                },
+                                Default = {
+                                    Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Border, Transparency = 0},
+                                    Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                                },
+                                Hover = {
+                                    Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                    Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                                },
+                                Pressed = {
+                                    Surface = {BackgroundColor3 = Config.Colors.SectionBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                    Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                                }
+                            })
                             Button.MouseButton1Click:Connect(Callback)
                             return Button
                         end
@@ -2846,28 +3078,43 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                             CreateInstance("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, Scale(4))})
                             local Stroke = CreateInstance("UIStroke", {Parent = Btn, Thickness = 1}, {Color = "Border"})
-
-                            Btn.MouseEnter:Connect(function()
-                                TweenService:Create(Btn, CreateTween(0.15), {TextColor3 = Config.Colors.TextLight}):Play()
-                                TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Accent}):Play()
-                            end)
-
-                            Btn.MouseLeave:Connect(function()
-                                TweenService:Create(Btn, CreateTween(0.15), {TextColor3 = Config.Colors.TextMain}):Play()
-                                TweenService:Create(Stroke, CreateTween(0.15), {Color = Config.Colors.Border}):Play()
-                            end)
+                            local Feedback = CreateInteractiveFeedback({
+                                Interactive = {Btn},
+                                Targets = {
+                                    Surface = {Object = Btn, Time = 0.12},
+                                    Stroke = {Object = Stroke, Time = 0.12},
+                                    Text = {Object = Btn, Time = 0.12}
+                                },
+                                Default = {
+                                    Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Border, Transparency = 0},
+                                    Text = {TextColor3 = Config.Colors.TextMain, TextTransparency = 0}
+                                },
+                                Hover = {
+                                    Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                    Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                                },
+                                Pressed = {
+                                    Surface = {BackgroundColor3 = Config.Colors.SectionBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                    Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                                },
+                                Disabled = {
+                                    Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0.18},
+                                    Stroke = {Color = Config.Colors.Border, Transparency = 0.35},
+                                    Text = {TextColor3 = Config.Colors.TextMain, TextTransparency = 0.35}
+                                }
+                            })
 
                             Btn.MouseButton1Click:Connect(function()
-                                local ClickTween = TweenService:Create(Btn, CreateTween(0.1), {BackgroundColor3 = Config.Colors.SectionBg})
-                                ClickTween:Play()
-                                ClickTween.Completed:Wait()
-                                TweenService:Create(Btn, CreateTween(0.1), {BackgroundColor3 = Config.Colors.ElementBg}):Play()
                                 if BtnProps.Callback then
                                     BtnProps.Callback()
                                 end
                             end)
 
                             table.insert(ButtonsInGroup, Btn)
+                            table.insert(ButtonFunctions, Feedback)
 
                             local TotalPadding = (#ButtonsInGroup - 1) * Scale(4)
                             local Offset = - (TotalPadding / #ButtonsInGroup)
@@ -2904,7 +3151,14 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Root = ButtonFrame,
                             Interactive = ButtonsInGroup,
                             TextTargets = ButtonsInGroup,
-                            Tooltip = Props.Tooltip
+                            Tooltip = Props.Tooltip,
+                            SetDisabledState = function(Disabled)
+                                for _, Feedback in ipairs(ButtonFunctions) do
+                                    if type(Feedback) == "table" and Feedback.SetDisabled then
+                                        Feedback:SetDisabled(Disabled)
+                                    end
+                                end
+                            end
                         })
 
                         return Result
@@ -2987,16 +3241,39 @@ function Library:Window(TitleOrIcon, WindowScale)
                             TextTruncate = Enum.TextTruncate.AtEnd
                         }, {TextColor3 = "TextLight", PlaceholderColor3 = "TextMain"})
                         ApplyTextOptions(TextBox, Props)
+                        local InputFeedback = CreateInteractiveFeedback({
+                            Interactive = {TextBox},
+                            Targets = {
+                                Surface = {Object = BoxContainer, Time = 0.12},
+                                Stroke = {Object = BoxStroke, Time = 0.12}
+                            },
+                            Default = {
+                                Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Border, Transparency = 0}
+                            },
+                            Hover = {
+                                Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Border, Transparency = 0}
+                            },
+                            Focused = {
+                                Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0}
+                            },
+                            Disabled = {
+                                Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0.12},
+                                Stroke = {Color = Config.Colors.Border, Transparency = 0.35}
+                            }
+                        })
 
                         TextBox.Focused:Connect(function()
-                            TweenService:Create(BoxStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                            InputFeedback:SetFocused(true)
                             if Props.OnFocusExpand then
                                 TextBox.TextTruncate = Enum.TextTruncate.None
                             end
                         end)
 
                         TextBox.FocusLost:Connect(function(EnterPressed)
-                            TweenService:Create(BoxStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                            InputFeedback:SetFocused(false)
                             if Props.OnFocusExpand and Props.Truncate then
                                 TextBox.TextTruncate = Props.Truncate
                             end
@@ -3020,7 +3297,11 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Root = InputFrame,
                             Interactive = {TextBox},
                             TextTargets = {TextBox},
-                            Tooltip = Props.Tooltip
+                            Tooltip = Props.Tooltip,
+                            Cleanup = {InputFeedback},
+                            SetDisabledState = function(Disabled)
+                                InputFeedback:SetDisabled(Disabled)
+                            end
                         })
 
                         if Props.Flag then Library.Flags[Props.Flag] = InputFunctions end
@@ -3076,6 +3357,45 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Image = Config.ChevronImage,
                             Rotation = 0
                         }, {ImageColor3 = "TextMain"})
+                        local DropdownFeedback = CreateInteractiveFeedback({
+                            Interactive = {DropdownBtn},
+                            Targets = {
+                                Surface = {Object = DropdownBtn, Time = 0.12},
+                                Stroke = {Object = BtnStroke, Time = 0.12},
+                                Text = {Object = DropdownBtn, Time = 0.12},
+                                Icon = {Object = Arrow, Time = 0.12}
+                            },
+                            Default = {
+                                Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Border, Transparency = 0},
+                                Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0},
+                                Icon = {ImageColor3 = Config.Colors.TextMain, ImageTransparency = 0}
+                            },
+                            Hover = {
+                                Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0},
+                                Icon = {ImageColor3 = Config.Colors.TextLight, ImageTransparency = 0}
+                            },
+                            Focused = {
+                                Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0},
+                                Icon = {ImageColor3 = Config.Colors.TextLight, ImageTransparency = 0}
+                            },
+                            Pressed = {
+                                Surface = {BackgroundColor3 = Config.Colors.SectionBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0},
+                                Icon = {ImageColor3 = Config.Colors.TextLight, ImageTransparency = 0}
+                            },
+                            Disabled = {
+                                Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0.14},
+                                Stroke = {Color = Config.Colors.Border, Transparency = 0.35},
+                                Text = {TextColor3 = Config.Colors.TextMain, TextTransparency = 0.35},
+                                Icon = {ImageColor3 = Config.Colors.TextMain, ImageTransparency = 0.35}
+                            }
+                        })
 
                         local MenuOpen = false
                         local SelectedOption = Props.Default
@@ -3114,6 +3434,7 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         local function CloseMenu()
                             MenuOpen = false
+                            DropdownFeedback:SetFocused(false)
                             TweenService:Create(Arrow, CreateTween(0.2), {Rotation = 0}):Play()
                             TweenService:Create(OptionFrame, CreateTween(0.2), {Size = UDim2.new(1, 0, 0, 0)}):Play()
                             task.wait(0.2)
@@ -3124,6 +3445,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local function OpenMenu()
                             Library:ClosePopups()
                             MenuOpen = true
+                            DropdownFeedback:SetFocused(true)
                             OptionFrame.Visible = true
                             TweenService:Create(Arrow, CreateTween(0.2), {Rotation = 180}):Play()
 
@@ -3181,13 +3503,25 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     AutoButtonColor = false,
                                     ZIndex = 102
                                 }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
-
-                                Btn.MouseEnter:Connect(function()
-                                    TweenService:Create(Btn, CreateTween(0.1), {BackgroundColor3 = Config.Colors.PanelBg}):Play()
-                                end)
-                                Btn.MouseLeave:Connect(function()
-                                    TweenService:Create(Btn, CreateTween(0.1), {BackgroundColor3 = Config.Colors.ElementBg}):Play()
-                                end)
+                                CreateInteractiveFeedback({
+                                    Interactive = {Btn},
+                                    Targets = {
+                                        Surface = {Object = Btn, Time = 0.08},
+                                        Text = {Object = Btn, Time = 0.08}
+                                    },
+                                    Default = {
+                                        Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0},
+                                        Text = {TextColor3 = Config.Colors.TextMain, TextTransparency = 0}
+                                    },
+                                    Hover = {
+                                        Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                        Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                                    },
+                                    Pressed = {
+                                        Surface = {BackgroundColor3 = Config.Colors.SectionBg, BackgroundTransparency = 0},
+                                        Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                                    }
+                                })
                                 Btn.MouseButton1Click:Connect(function() SelectOption(Option) end)
 
                                 table.insert(OptionButtons, Btn)
@@ -3195,13 +3529,6 @@ function Library:Window(TitleOrIcon, WindowScale)
                         end
 
                         BuildOptions()
-
-                        DropdownBtn.MouseEnter:Connect(function()
-                            TweenService:Create(BtnStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
-                        end)
-                        DropdownBtn.MouseLeave:Connect(function()
-                            TweenService:Create(BtnStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
-                        end)
 
                         local DropdownFunctions = {}
                         function DropdownFunctions:SetValue(Val) SelectOption(Val) end
@@ -3218,10 +3545,12 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Interactive = {DropdownBtn},
                             TextTargets = {DropdownBtn},
                             Tooltip = Props.Tooltip,
+                            Cleanup = {DropdownFeedback},
                             SetDisabledState = function(Disabled)
                                 if Disabled and MenuOpen then
                                     CloseMenu()
                                 end
+                                DropdownFeedback:SetDisabled(Disabled)
                             end
                         })
 
@@ -3265,6 +3594,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                         }, {BackgroundColor3 = "ElementBg"})
 
                         CreateInstance("UICorner", {Parent = BarBg, CornerRadius = UDim.new(0, Scale(3))})
+                        local BarStroke = CreateInstance("UIStroke", {Parent = BarBg, Thickness = 1}, {Color = "Border"})
 
                         local BarFill = CreateInstance("Frame", {
                             Parent = BarBg,
@@ -3277,7 +3607,10 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local ProgressFunctions = {}
                         function ProgressFunctions:SetValue(Percent)
                             local Clamped = math.clamp(Percent, 0, 100)
-                            TweenService:Create(BarFill, CreateTween(0.3), {Size = UDim2.new(Clamped / 100, 0, 1, 0)}):Play()
+                            TweenService:Create(BarFill, CreateTween(0.18), {Size = UDim2.new(Clamped / 100, 0, 1, 0)}):Play()
+                            TweenService:Create(BarStroke, CreateTween(0.18), {
+                                Color = Clamped > 0 and Config.Colors.Accent or Config.Colors.Border
+                            }):Play()
                             PercentLabel.Text = math.floor(Clamped) .. "%"
                         end
                         function ProgressFunctions:GetValue()
@@ -3328,18 +3661,43 @@ function Library:Window(TitleOrIcon, WindowScale)
                         }, {TextColor3 = "TextMain"})
 
                         local Toggled = Props.Default or false
+                        local ToggleFeedback = CreateInteractiveFeedback({
+                            Interactive = {Checkbox},
+                            Targets = {
+                                Surface = {Object = Checkbox, Time = 0.1},
+                                Stroke = {Object = CheckStroke, Time = 0.1},
+                                Text = {Object = Title, Time = 0.1}
+                            },
+                            Default = {
+                                Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Color3.fromRGB(50, 50, 50), Transparency = 0},
+                                Text = {TextColor3 = Config.Colors.TextMain, TextTransparency = 0}
+                            },
+                            Hover = {
+                                Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                            },
+                            Focused = {
+                                Surface = {BackgroundColor3 = Config.Colors.Accent, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                            },
+                            Pressed = {
+                                Surface = {BackgroundColor3 = Config.Colors.SectionBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0},
+                                Text = {TextColor3 = Config.Colors.TextLight, TextTransparency = 0}
+                            },
+                            Disabled = {
+                                Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0.18},
+                                Stroke = {Color = Config.Colors.Border, Transparency = 0.35},
+                                Text = {TextColor3 = Config.Colors.TextMain, TextTransparency = 0.35}
+                            }
+                        })
 
                         local function UpdateState(ForcedVal)
                             if ForcedVal ~= nil then Toggled = ForcedVal end
-                            if Toggled then
-                                TweenService:Create(Checkbox, CreateTween(0.15), {BackgroundColor3 = Config.Colors.Accent}):Play()
-                                CheckStroke.Color = Config.Colors.Accent
-                                TweenService:Create(Title, CreateTween(0.15), {TextColor3 = Config.Colors.TextLight}):Play()
-                            else
-                                TweenService:Create(Checkbox, CreateTween(0.15), {BackgroundColor3 = Config.Colors.ElementBg}):Play()
-                                CheckStroke.Color = Color3.fromRGB(50,50,50)
-                                TweenService:Create(Title, CreateTween(0.15), {TextColor3 = Config.Colors.TextMain}):Play()
-                            end
+                            ToggleFeedback:SetFocused(Toggled)
                             if Props.Callback then Props.Callback(Toggled) end
                         end
 
@@ -3362,7 +3720,11 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Root = ToggleFrame,
                             Interactive = {Checkbox},
                             TextTargets = {Title},
-                            Tooltip = Props.Tooltip
+                            Tooltip = Props.Tooltip,
+                            Cleanup = {ToggleFeedback},
+                            SetDisabledState = function(Disabled)
+                                ToggleFeedback:SetDisabled(Disabled)
+                            end
                         })
 
                         if Props.Flag then Library.Flags[Props.Flag] = ToggleFunctions end
@@ -3437,6 +3799,18 @@ function Library:Window(TitleOrIcon, WindowScale)
                         }, {BackgroundColor3 = "ElementBg"})
 
                         CreateInstance("UICorner", {Parent = SliderBg, CornerRadius = UDim.new(0, Scale(2))})
+                        local SliderStroke = CreateInstance("UIStroke", {Parent = SliderBg, Thickness = 1}, {Color = "Border"})
+
+                        local SliderHitbox = CreateInstance("TextButton", {
+                            Parent = SliderFrame,
+                            BackgroundTransparency = 1,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, Scale(14)),
+                            Size = UDim2.new(1, 0, 0, Scale(16)),
+                            Text = "",
+                            AutoButtonColor = false,
+                            ZIndex = SliderBg.ZIndex + 2
+                        })
 
                         local SliderFill = CreateInstance("Frame", {
                             Parent = SliderBg,
@@ -3482,7 +3856,34 @@ function Library:Window(TitleOrIcon, WindowScale)
                         local SliderFunctions = {}
                         local CurrentValue
                         local PresetButtons = {}
-                        local InteractiveTargets = {SliderBg}
+                        local InteractiveTargets = {SliderBg, SliderHitbox}
+                        local SliderFeedback = CreateInteractiveFeedback({
+                            Interactive = InteractiveTargets,
+                            Targets = {
+                                Surface = {Object = SliderBg, Time = 0.08},
+                                Stroke = {Object = SliderStroke, Time = 0.08}
+                            },
+                            Default = {
+                                Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Border, Transparency = 0.15}
+                            },
+                            Hover = {
+                                Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0}
+                            },
+                            Focused = {
+                                Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0}
+                            },
+                            Pressed = {
+                                Surface = {BackgroundColor3 = Config.Colors.SectionBg, BackgroundTransparency = 0},
+                                Stroke = {Color = Config.Colors.Accent, Transparency = 0}
+                            },
+                            Disabled = {
+                                Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0.12},
+                                Stroke = {Color = Config.Colors.Border, Transparency = 0.45}
+                            }
+                        })
 
                         local function SnapValue(Val)
                             local Numeric = tonumber(Val) or ZeroValue
@@ -3512,6 +3913,12 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     BackgroundTransparency = IsActive and 0.1 or 0,
                                     TextColor3 = IsActive and Config.Colors.TextLight or Config.Colors.TextMain
                                 }):Play()
+                                if PresetButton.Stroke then
+                                    TweenService:Create(PresetButton.Stroke, CreateTween(0.12), {
+                                        Color = IsActive and Config.Colors.Accent or Config.Colors.Border,
+                                        Transparency = IsActive and 0 or 0.2
+                                    }):Play()
+                                end
                             end
                         end
 
@@ -3519,8 +3926,9 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         ValueLabel.Text = FormatValue(CurrentValue)
 
-                        SliderBg.InputBegan:Connect(function(Input)
+                        SliderHitbox.InputBegan:Connect(function(Input)
                             if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+                                SliderFeedback:SetFocused(true)
                                 local function Update(InputVec)
                                     local Pos = math.clamp((InputVec.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
                                     local Raw = (Pos * Range) + Props.Min
@@ -3534,6 +3942,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 end)
                                 local EndCon; EndCon = UserInputService.InputEnded:Connect(function(Ended)
                                     if Ended.UserInputType == Enum.UserInputType.MouseButton1 or Ended.UserInputType == Enum.UserInputType.Touch then
+                                        SliderFeedback:SetFocused(false)
                                         MoveCon:Disconnect()
                                         EndCon:Disconnect()
                                     end
@@ -3594,7 +4003,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
 
                                     CreateInstance("UICorner", {Parent = PresetButton, CornerRadius = UDim.new(0, Scale(10))})
-                                    CreateInstance("UIStroke", {Parent = PresetButton, Thickness = 1}, {Color = "Border"})
+                                    local PresetStroke = CreateInstance("UIStroke", {Parent = PresetButton, Thickness = 1}, {Color = "Border"})
                                     CreateInstance("UIPadding", {
                                         Parent = PresetButton,
                                         PaddingLeft = UDim.new(0, Scale(8)),
@@ -3608,6 +4017,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     table.insert(InteractiveTargets, PresetButton)
                                     table.insert(PresetButtons, {
                                         Button = PresetButton,
+                                        Stroke = PresetStroke,
                                         Value = SnapValue(PresetValue)
                                     })
                                 end
@@ -3619,7 +4029,7 @@ function Library:Window(TitleOrIcon, WindowScale)
                             local Pos = Range ~= 0 and ((CurrentValue - Props.Min) / Range) or 0
                             local StartScale = math.min(ZeroScale, Pos)
                             local FillSize = math.abs(Pos - ZeroScale)
-                            TweenService:Create(SliderFill, CreateTween(0.08), {
+                            TweenService:Create(SliderFill, CreateTween(0.06), {
                                 Position = UDim2.new(StartScale, 0, 0, 0),
                                 Size = UDim2.new(FillSize, 0, 1, 0)
                             }):Play()
@@ -3643,7 +4053,11 @@ function Library:Window(TitleOrIcon, WindowScale)
                             Root = SliderFrame,
                             Interactive = InteractiveTargets,
                             TextTargets = {ValueLabel},
-                            Tooltip = Props.Tooltip
+                            Tooltip = Props.Tooltip,
+                            Cleanup = {SliderFeedback},
+                            SetDisabledState = function(Disabled)
+                                SliderFeedback:SetDisabled(Disabled)
+                            end
                         })
 
                         if Props.Flag then Library.Flags[Props.Flag] = SliderFunctions end
@@ -3707,12 +4121,31 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                             CreateInstance("UICorner", {Parent = SearchBox, CornerRadius = UDim.new(0, Scale(4))})
                             local SearchStroke = CreateInstance("UIStroke", {Parent = SearchBox, Thickness = 1}, {Color = "Border"})
+                            local SearchFeedback = CreateInteractiveFeedback({
+                                Interactive = {SearchBox},
+                                Targets = {
+                                    Surface = {Object = SearchBox, Time = 0.12},
+                                    Stroke = {Object = SearchStroke, Time = 0.12}
+                                },
+                                Default = {
+                                    Surface = {BackgroundColor3 = Config.Colors.ElementBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Border, Transparency = 0}
+                                },
+                                Hover = {
+                                    Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Border, Transparency = 0}
+                                },
+                                Focused = {
+                                    Surface = {BackgroundColor3 = Config.Colors.PanelBg, BackgroundTransparency = 0},
+                                    Stroke = {Color = Config.Colors.Accent, Transparency = 0}
+                                }
+                            })
 
                             SearchBox.Focused:Connect(function()
-                                TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                                SearchFeedback:SetFocused(true)
                             end)
                             SearchBox.FocusLost:Connect(function()
-                                TweenService:Create(SearchStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                                SearchFeedback:SetFocused(false)
                             end)
 
                             SearchBox.Focused:Connect(function()
@@ -3853,6 +4286,10 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 BackgroundColor3 = backgroundColor
                             }):Play()
 
+                            if CellBtn.Feedback then
+                                CellBtn.Feedback:SetFocused(IsSelected)
+                            end
+
                             if CellBtn.Stroke then
                                 TweenService:Create(CellBtn.Stroke, CreateTween(0.15), {
                                     Color = strokeColor
@@ -3926,6 +4363,53 @@ function Library:Window(TitleOrIcon, WindowScale)
                                     Color = Config.Colors.Border
                                 })
                             end
+                            local CellFeedback = CreateInteractiveFeedback({
+                                Interactive = {CellBtn},
+                                Targets = {
+                                    Surface = {Object = CellBtn, Time = 0.1},
+                                    Stroke = Stroke and {Object = Stroke, Time = 0.1} or nil
+                                },
+                                Default = {
+                                    Surface = {
+                                        BackgroundColor3 = Config.Colors.ElementBg,
+                                        BackgroundTransparency = 0.18
+                                    },
+                                    Stroke = Stroke and {
+                                        Color = Config.Colors.Border,
+                                        Transparency = 0
+                                    } or nil
+                                },
+                                Hover = {
+                                    Surface = {
+                                        BackgroundColor3 = Config.Colors.ElementBg,
+                                        BackgroundTransparency = 0.08
+                                    },
+                                    Stroke = Stroke and {
+                                        Color = Config.Colors.Accent,
+                                        Transparency = 0
+                                    } or nil
+                                },
+                                Focused = {
+                                    Surface = {
+                                        BackgroundColor3 = Config.Colors.SectionBg,
+                                        BackgroundTransparency = 0.02
+                                    },
+                                    Stroke = Stroke and {
+                                        Color = Config.Colors.Accent,
+                                        Transparency = 0
+                                    } or nil
+                                },
+                                Pressed = {
+                                    Surface = {
+                                        BackgroundColor3 = Config.Colors.SectionBg,
+                                        BackgroundTransparency = 0
+                                    },
+                                    Stroke = Stroke and {
+                                        Color = Config.Colors.Accent,
+                                        Transparency = 0
+                                    } or nil
+                                }
+                            })
 
                             local Checkmark = CreateInstance("TextLabel", {
                                 Parent = CellBtn,
@@ -4007,24 +4491,11 @@ function Library:Window(TitleOrIcon, WindowScale)
                                 TextColor3 = Config.Colors.TextLight
                             })
 
-                            CellBtn.MouseEnter:Connect(function()
-                                if not table.find(Selected, Item) then
-                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.08}):Play()
-                                    if Stroke then TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Accent}):Play() end
-                                end
-                            end)
-
-                            CellBtn.MouseLeave:Connect(function()
-                                if not table.find(Selected, Item) then
-                                    TweenService:Create(CellBtn, CreateTween(0.1), {BackgroundTransparency = 0.18}):Play()
-                                    if Stroke then TweenService:Create(Stroke, CreateTween(0.1), {Color = Config.Colors.Border}):Play() end
-                                end
-                            end)
-
                             CellBtn.MouseButton1Click:Connect(function()
                                 local CurrentlySelected = table.find(Selected, Item) ~= nil
                                 UpdateSelection(Item, not CurrentlySelected, {
                                     Frame = CellBtn,
+                                    Feedback = CellFeedback,
                                     Stroke = Stroke,
                                     Item = Item,
                                     Checkmark = Checkmark,
@@ -4034,6 +4505,7 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                             local CellData = {
                                 Frame = CellBtn,
+                                Feedback = CellFeedback,
                                 Stroke = Stroke,
                                 Item = Item,
                                 Checkmark = Checkmark,
@@ -4332,7 +4804,7 @@ function Library:Show()
     if Library.MainFrame then
         Library.WindowVisible = true
         Library.MainFrame.Visible = true
-        TweenService:Create(Library.MainFrame, CreateTween(0.3), {GroupTransparency = 0}):Play()
+        PlayGroupTransparencyTween(Library.MainFrame, 0.3, 0)
         local Stroke = Library.MainFrame:FindFirstChild("UIStroke")
         if Stroke then
             TweenService:Create(Stroke, CreateTween(0.3), {Transparency = 0}):Play()
@@ -4346,7 +4818,7 @@ function Library:Hide()
         if Stroke then
             TweenService:Create(Stroke, CreateTween(0.3), {Transparency = 1}):Play()
         end
-        TweenService:Create(Library.MainFrame, CreateTween(0.3), {GroupTransparency = 1}):Play()
+        PlayGroupTransparencyTween(Library.MainFrame, 0.3, 1)
         task.delay(0.3, function()
             Library.MainFrame.Visible = false
             Library.WindowVisible = false
@@ -4428,7 +4900,7 @@ function Library:CreateModal(Title, Content, Options)
     })
 
     local function CloseModal()
-        TweenService:Create(Modal, CreateTween(0.2), {GroupTransparency = 1}):Play()
+        PlayGroupTransparencyTween(Modal, 0.2, 1)
         TweenService:Create(Backdrop, CreateTween(0.2), {BackgroundTransparency = 1}):Play()
         task.wait(0.2)
         Modal:Destroy()
