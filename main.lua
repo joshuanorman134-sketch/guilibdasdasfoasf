@@ -1278,12 +1278,16 @@ function Library:Window(TitleOrIcon, WindowScale)
         Padding = UDim.new(0, Scale(4))
     })
 
+    local sidebarWidth = Scale(156)
+    local contentLeftOffset = Scale(10) + sidebarWidth + Scale(10)
+    local contentRightPadding = Scale(15)
+
     -- Sidebar
     local SidebarArea = CreateInstance("Frame", {
         Parent = Body,
         BackgroundTransparency = 1,
         Position = UDim2.new(0, Scale(10), 0, Scale(10)),
-        Size = UDim2.new(0, Scale(132), 1, Scale(-20))
+        Size = UDim2.new(0, sidebarWidth, 1, Scale(-20))
     })
 
     CreateInstance("TextLabel", {
@@ -1312,8 +1316,8 @@ function Library:Window(TitleOrIcon, WindowScale)
     local ContentArea = CreateInstance("Frame", {
         Parent = Body,
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, Scale(152), 0, Scale(10)),
-        Size = UDim2.new(1, Scale(-167), 1, Scale(-20))
+        Position = UDim2.new(0, contentLeftOffset, 0, Scale(10)),
+        Size = UDim2.new(1, -(contentLeftOffset + contentRightPadding), 1, Scale(-20))
     })
 
     CreateInstance("TextLabel", {
