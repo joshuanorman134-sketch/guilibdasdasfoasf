@@ -3499,6 +3499,195 @@ function Library:Window(TitleOrIcon, WindowScale)
                         return ToggleFunctions
                     end
 
+                    function SectionFunctions:RadioGroup(Props)
+                        Props = Props or {}
+                        local Options = Props.Options or {}
+                        local Layout = Props.Layout == "Horizontal" and "Horizontal" or "Vertical"
+                        local GroupFrameHeight = Layout == "Horizontal" and Scale(46) or math.max(Scale(20), #Options * Scale(20))
+
+                        local GroupFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(18) + GroupFrameHeight)
+                        })
+
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = GroupFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Radio Group",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, Scale(16))
+                        }, {TextColor3 = "TextMain"})
+                        ApplyTextOptions(Title, Props)
+
+                        local OptionsFrame = CreateInstance("Frame", {
+                            Parent = GroupFrame,
+                            BackgroundTransparency = 1,
+                            Position = UDim2.new(0, 0, 0, Scale(18)),
+                            Size = UDim2.new(1, 0, 0, GroupFrameHeight)
+                        })
+
+                        local OptionsLayout = CreateInstance("UIListLayout", {
+                            Parent = OptionsFrame,
+                            FillDirection = Layout == "Horizontal" and Enum.FillDirection.Horizontal or Enum.FillDirection.Vertical,
+                            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                            VerticalAlignment = Enum.VerticalAlignment.Top,
+                            Padding = UDim.new(0, Scale(6))
+                        })
+
+                        local InteractiveTargets = {}
+                        local OptionRefs = {}
+                        local CurrentValue = Props.Default
+
+                        local function NormalizeOption(Option)
+                            if type(Option) == "table" then
+                                local Value = Option.Value
+                                if Value == nil then
+                                    Value = Option[2] ~= nil and Option[2] or Option[1]
+                                end
+                                local Label = Option.Label or Option.Title
+                                if Label == nil or Label == "" then
+                                    Label = tostring(Value)
+                                end
+                                return Label, Value, Option.Tooltip
+                            end
+                            return tostring(Option), Option, nil
+                        end
+
+                        local function ValuesEqual(A, B)
+                            return A == B
+                        end
+
+                        local function UpdateState()
+                            for _, Ref in ipairs(OptionRefs) do
+                                local IsSelected = ValuesEqual(Ref.Value, CurrentValue)
+                                TweenService:Create(Ref.Outer, CreateTween(0.12), {
+                                    BackgroundColor3 = IsSelected and Config.Colors.Accent or Config.Colors.ElementBg
+                                }):Play()
+                                TweenService:Create(Ref.Inner, CreateTween(0.12), {
+                                    BackgroundTransparency = IsSelected and 0 or 1
+                                }):Play()
+                                TweenService:Create(Ref.Label, CreateTween(0.12), {
+                                    TextColor3 = IsSelected and Config.Colors.TextLight or Config.Colors.TextMain
+                                }):Play()
+                            end
+                        end
+
+                        local RadioFunctions = {}
+
+                        for _, Option in ipairs(Options) do
+                            local LabelText, Value, TooltipText = NormalizeOption(Option)
+                            if Value ~= nil then
+                                local Row = CreateInstance("TextButton", {
+                                    Parent = OptionsFrame,
+                                    BackgroundTransparency = 1,
+                                    BorderSizePixel = 0,
+                                    Size = Layout == "Horizontal" and UDim2.new(0, Scale(110), 0, Scale(18)) or UDim2.new(1, 0, 0, Scale(18)),
+                                    Text = "",
+                                    AutoButtonColor = false
+                                })
+
+                                local Outer = CreateInstance("Frame", {
+                                    Parent = Row,
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(0, Scale(14), 0, Scale(14)),
+                                    Position = UDim2.new(0, 0, 0.5, Scale(-7))
+                                }, {BackgroundColor3 = "ElementBg"})
+                                CreateInstance("UICorner", {Parent = Outer, CornerRadius = UDim.new(1, 0)})
+                                CreateInstance("UIStroke", {Parent = Outer, Thickness = 1}, {Color = "Border"})
+
+                                local Inner = CreateInstance("Frame", {
+                                    Parent = Outer,
+                                    AnchorPoint = Vector2.new(0.5, 0.5),
+                                    Position = UDim2.new(0.5, 0, 0.5, 0),
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(0, Scale(6), 0, Scale(6)),
+                                    BackgroundTransparency = 1
+                                }, {BackgroundColor3 = "TextLight"})
+                                CreateInstance("UICorner", {Parent = Inner, CornerRadius = UDim.new(1, 0)})
+
+                                local Label = CreateInstance("TextLabel", {
+                                    Parent = Row,
+                                    BackgroundTransparency = 1,
+                                    Position = UDim2.new(0, Scale(20), 0, 0),
+                                    Size = UDim2.new(1, Scale(-20), 1, 0),
+                                    Text = tostring(LabelText),
+                                    FontFace = Config.Font,
+                                    TextSize = Scale(11),
+                                    TextXAlignment = Enum.TextXAlignment.Left
+                                }, {TextColor3 = "TextMain"})
+                                ApplyTextOptions(Label, Props)
+
+                                Row.MouseButton1Click:Connect(function()
+                                    RadioFunctions:SetValue(Value)
+                                end)
+
+                                table.insert(InteractiveTargets, Row)
+                                table.insert(OptionRefs, {
+                                    Row = Row,
+                                    Outer = Outer,
+                                    Inner = Inner,
+                                    Label = Label,
+                                    Value = Value,
+                                    Tooltip = TooltipText
+                                })
+                            end
+                        end
+
+                        if CurrentValue == nil and #OptionRefs > 0 then
+                            CurrentValue = OptionRefs[1].Value
+                        end
+
+                        function RadioFunctions:SetValue(Value)
+                            local Found = false
+                            for _, Ref in ipairs(OptionRefs) do
+                                if ValuesEqual(Ref.Value, Value) then
+                                    CurrentValue = Ref.Value
+                                    Found = true
+                                    break
+                                end
+                            end
+                            if not Found then
+                                return
+                            end
+                            UpdateState()
+                            if Props.Callback then
+                                Props.Callback(CurrentValue)
+                            end
+                        end
+
+                        function RadioFunctions:GetValue()
+                            return CurrentValue
+                        end
+
+                        function RadioFunctions:GetOptions()
+                            local Values = {}
+                            for _, Ref in ipairs(OptionRefs) do
+                                table.insert(Values, Ref.Value)
+                            end
+                            return Values
+                        end
+
+                        RadioFunctions.DefaultValue = CurrentValue
+                        RadioFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
+
+                        UpdateState()
+
+                        AttachControlStateApi(RadioFunctions, {
+                            Root = GroupFrame,
+                            Interactive = InteractiveTargets,
+                            TextTargets = {Title},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = RadioFunctions
+                        end
+                        return RadioFunctions
+                    end
+
                     -- SLIDER - Compact
                     function SectionFunctions:Slider(Props)
                         local Step = tonumber(Props.Step)
@@ -3789,6 +3978,1173 @@ function Library:Window(TitleOrIcon, WindowScale)
 
                         if Props.Flag then Library.Flags[Props.Flag] = SliderFunctions end
                         return SliderFunctions
+                    end
+
+                    function SectionFunctions:RangeSlider(Props)
+                        Props = Props or {}
+
+                        local Step = tonumber(Props.Step)
+                        if Step and Step <= 0 then
+                            Step = nil
+                        end
+
+                        local function CountDecimals(Value)
+                            local Text = string.format("%.10f", tonumber(Value) or 0)
+                            local Trimmed = Text:gsub("0+$", "")
+                            local DecimalsText = Trimmed:match("%.(%d+)")
+                            return DecimalsText and #DecimalsText or 0
+                        end
+
+                        local Decimals = Props.Decimal
+                        if Decimals == nil then
+                            Decimals = Step and CountDecimals(Step) or 0
+                        end
+
+                        local Mult = 10 ^ Decimals
+                        local Format = "%." .. Decimals .. "f"
+                        local Prefix = Props.Prefix or ""
+                        local Suffix = Props.Suffix or ""
+                        local MinValue = tonumber(Props.Min) or 0
+                        local MaxValue = tonumber(Props.Max) or 100
+                        local Range = MaxValue - MinValue
+                        local DefaultMin = Props.DefaultMin
+                        local DefaultMax = Props.DefaultMax
+                        local Default = Props.Default
+
+                        if type(Default) == "table" then
+                            DefaultMin = DefaultMin ~= nil and DefaultMin or Default.Min or Default[1]
+                            DefaultMax = DefaultMax ~= nil and DefaultMax or Default.Max or Default[2]
+                        end
+
+                        if DefaultMin == nil then
+                            DefaultMin = MinValue
+                        end
+                        if DefaultMax == nil then
+                            DefaultMax = MaxValue
+                        end
+
+                        local RangeFrame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(40))
+                        })
+
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = RangeFrame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Range",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, Scale(16))
+                        }, {TextColor3 = "TextMain"})
+                        ApplyTextOptions(Title, Props)
+
+                        local ValueLabel = CreateInstance("TextLabel", {
+                            Parent = RangeFrame,
+                            BackgroundTransparency = 1,
+                            Text = "",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Right,
+                            Size = UDim2.new(1, 0, 0, Scale(16))
+                        }, {TextColor3 = "TextLight"})
+                        ApplyTextOptions(ValueLabel, Props)
+
+                        local SliderBg = CreateInstance("TextButton", {
+                            Parent = RangeFrame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, Scale(22)),
+                            Size = UDim2.new(1, 0, 0, Scale(4)),
+                            Text = "",
+                            AutoButtonColor = false
+                        }, {BackgroundColor3 = "ElementBg"})
+                        CreateInstance("UICorner", {Parent = SliderBg, CornerRadius = UDim.new(0, Scale(2))})
+
+                        local RangeFill = CreateInstance("Frame", {
+                            Parent = SliderBg,
+                            BorderSizePixel = 0,
+                            Size = UDim2.new(0, 0, 1, 0)
+                        }, {BackgroundColor3 = "Accent"})
+                        CreateInstance("UICorner", {Parent = RangeFill, CornerRadius = UDim.new(0, Scale(2))})
+
+                        local HandleContainer = CreateInstance("Frame", {
+                            Parent = RangeFrame,
+                            BackgroundTransparency = 1,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, Scale(16)),
+                            Size = UDim2.new(1, 0, 0, Scale(18))
+                        })
+
+                        local function CreateHandle(Name)
+                            local Handle = CreateInstance("Frame", {
+                                Parent = HandleContainer,
+                                Name = Name,
+                                AnchorPoint = Vector2.new(0.5, 0.5),
+                                Active = true,
+                                BorderSizePixel = 0,
+                                Size = UDim2.new(0, Scale(12), 0, Scale(12)),
+                                Position = UDim2.new(0, 0, 0.5, 0)
+                            }, {BackgroundColor3 = "Accent"})
+                            CreateInstance("UICorner", {Parent = Handle, CornerRadius = UDim.new(1, 0)})
+                            CreateInstance("UIStroke", {Parent = Handle, Thickness = 1}, {Color = "TextLight"})
+                            return Handle
+                        end
+
+                        local LeftHandle = CreateHandle("LeftHandle")
+                        local RightHandle = CreateHandle("RightHandle")
+
+                        local RangeFunctions = {}
+                        local CurrentMin
+                        local CurrentMax
+
+                        local function SnapValue(Value)
+                            local Numeric = tonumber(Value) or MinValue
+                            local Clamped = math.clamp(Numeric, MinValue, MaxValue)
+                            if Step then
+                                local Relative = (Clamped - MinValue) / Step
+                                Clamped = MinValue + (math.floor(Relative + 0.5) * Step)
+                                Clamped = math.clamp(Clamped, MinValue, MaxValue)
+                            end
+                            return math.floor(Clamped * Mult + 0.5) / Mult
+                        end
+
+                        local function FormatValue(Value)
+                            return Prefix .. string.format(Format, Value) .. Suffix
+                        end
+
+                        local function ValueToScale(Value)
+                            return Range ~= 0 and ((Value - MinValue) / Range) or 0
+                        end
+
+                        local function SetLabel()
+                            ValueLabel.Text = FormatValue(CurrentMin) .. " - " .. FormatValue(CurrentMax)
+                        end
+
+                        local function UpdateVisuals()
+                            local LeftScale = ValueToScale(CurrentMin)
+                            local RightScale = ValueToScale(CurrentMax)
+                            LeftHandle.Position = UDim2.new(LeftScale, 0, 0.5, 0)
+                            RightHandle.Position = UDim2.new(RightScale, 0, 0.5, 0)
+                            RangeFill.Position = UDim2.new(LeftScale, 0, 0, 0)
+                            RangeFill.Size = UDim2.new(math.max(0, RightScale - LeftScale), 0, 1, 0)
+                            SetLabel()
+                        end
+
+                        local function NormalizeRange(MinCandidate, MaxCandidate)
+                            local NewMin = SnapValue(MinCandidate)
+                            local NewMax = SnapValue(MaxCandidate)
+                            if NewMin > NewMax then
+                                NewMin, NewMax = NewMax, NewMin
+                            end
+                            return NewMin, NewMax
+                        end
+
+                        function RangeFunctions:SetValue(NewMin, NewMax)
+                            if type(NewMin) == "table" then
+                                NewMax = NewMin.Max or NewMin[2]
+                                NewMin = NewMin.Min or NewMin[1]
+                            end
+                            CurrentMin, CurrentMax = NormalizeRange(NewMin ~= nil and NewMin or CurrentMin, NewMax ~= nil and NewMax or CurrentMax)
+                            UpdateVisuals()
+                            if Props.Callback then
+                                Props.Callback(CurrentMin, CurrentMax, {
+                                    Min = CurrentMin,
+                                    Max = CurrentMax
+                                })
+                            end
+                        end
+
+                        function RangeFunctions:GetValue()
+                            return {
+                                Min = CurrentMin,
+                                Max = CurrentMax
+                            }
+                        end
+
+                        function RangeFunctions:GetMin()
+                            return CurrentMin
+                        end
+
+                        function RangeFunctions:GetMax()
+                            return CurrentMax
+                        end
+
+                        RangeFunctions.DefaultValue = {
+                            Min = DefaultMin,
+                            Max = DefaultMax
+                        }
+                        RangeFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
+                        RangeFunctions.Serialize = function(Value)
+                            return {
+                                Min = Value.Min,
+                                Max = Value.Max
+                            }
+                        end
+                        RangeFunctions.Deserialize = function(Value)
+                            if type(Value) ~= "table" then
+                                return RangeFunctions.DefaultValue
+                            end
+                            return {
+                                Min = Value.Min or Value[1] or DefaultMin,
+                                Max = Value.Max or Value[2] or DefaultMax
+                            }
+                        end
+
+                        CurrentMin, CurrentMax = NormalizeRange(DefaultMin, DefaultMax)
+                        UpdateVisuals()
+
+                        local function BeginDrag(Handle)
+                            local function Update(InputPosition)
+                                local Pos = math.clamp((InputPosition.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
+                                local Raw = (Pos * Range) + MinValue
+                                local Snapped = SnapValue(Raw)
+                                if Handle == "min" then
+                                    RangeFunctions:SetValue(math.min(Snapped, CurrentMax), CurrentMax)
+                                else
+                                    RangeFunctions:SetValue(CurrentMin, math.max(Snapped, CurrentMin))
+                                end
+                            end
+
+                            return function(Input)
+                                if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+                                    Update(Input.Position)
+                                    local MoveCon = UserInputService.InputChanged:Connect(function(Move)
+                                        if Move.UserInputType == Enum.UserInputType.MouseMovement or Move.UserInputType == Enum.UserInputType.Touch then
+                                            Update(Move.Position)
+                                        end
+                                    end)
+                                    local EndCon
+                                    EndCon = UserInputService.InputEnded:Connect(function(Ended)
+                                        if Ended.UserInputType == Enum.UserInputType.MouseButton1 or Ended.UserInputType == Enum.UserInputType.Touch then
+                                            MoveCon:Disconnect()
+                                            EndCon:Disconnect()
+                                        end
+                                    end)
+                                end
+                            end
+                        end
+
+                        SliderBg.InputBegan:Connect(function(Input)
+                            if Input.UserInputType == Enum.UserInputType.MouseButton1 or Input.UserInputType == Enum.UserInputType.Touch then
+                                local Pos = math.clamp((Input.Position.X - SliderBg.AbsolutePosition.X) / SliderBg.AbsoluteSize.X, 0, 1)
+                                local Raw = (Pos * Range) + MinValue
+                                local Snapped = SnapValue(Raw)
+                                local DistToMin = math.abs(Snapped - CurrentMin)
+                                local DistToMax = math.abs(Snapped - CurrentMax)
+                                if DistToMin <= DistToMax then
+                                    RangeFunctions:SetValue(Snapped, CurrentMax)
+                                else
+                                    RangeFunctions:SetValue(CurrentMin, Snapped)
+                                end
+                            end
+                        end)
+
+                        LeftHandle.InputBegan:Connect(BeginDrag("min"))
+                        RightHandle.InputBegan:Connect(BeginDrag("max"))
+
+                        AttachControlStateApi(RangeFunctions, {
+                            Root = RangeFrame,
+                            Interactive = {SliderBg, LeftHandle, RightHandle},
+                            TextTargets = {ValueLabel},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = RangeFunctions
+                        end
+                        return RangeFunctions
+                    end
+
+                    function SectionFunctions:MultiSelect(Props)
+                        Props = Props or {}
+                        local Options = Props.Options or {}
+                        local SelectedMap = {}
+                        local OptionButtons = {}
+                        local InteractiveTargets = {}
+                        local MenuOpen = false
+
+                        local function NormalizeOption(Option)
+                            if type(Option) == "table" then
+                                local Value = Option.Value
+                                if Value == nil then
+                                    Value = Option[2] ~= nil and Option[2] or Option[1]
+                                end
+                                local Label = Option.Label or Option.Title
+                                if Label == nil or Label == "" then
+                                    Label = tostring(Value)
+                                end
+                                return tostring(Label), Value
+                            end
+                            return tostring(Option), Option
+                        end
+
+                        local function CloneSelection()
+                            local Result = {}
+                            for Value, Selected in pairs(SelectedMap) do
+                                if Selected then
+                                    table.insert(Result, Value)
+                                end
+                            end
+                            return Result
+                        end
+
+                        local Frame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 0),
+                            AutomaticSize = Enum.AutomaticSize.Y
+                        })
+
+                        CreateInstance("UIListLayout", {
+                            Parent = Frame,
+                            FillDirection = Enum.FillDirection.Vertical,
+                            Padding = UDim.new(0, Scale(2))
+                        })
+
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = Frame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Multi Select",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, Scale(16))
+                        }, {TextColor3 = "TextMain"})
+                        ApplyTextOptions(Title, Props)
+
+                        local Button = CreateInstance("TextButton", {
+                            Parent = Frame,
+                            BorderSizePixel = 0,
+                            Size = UDim2.new(1, 0, 0, Scale(22)),
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            Text = " Select...",
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            AutoButtonColor = false
+                        }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
+                        CreateInstance("UICorner", {Parent = Button, CornerRadius = UDim.new(0, Scale(4))})
+                        local ButtonStroke = CreateInstance("UIStroke", {Parent = Button, Thickness = 1}, {Color = "Border"})
+                        local Arrow = CreateInstance("ImageLabel", {
+                            Parent = Button,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(0, Scale(14), 0, Scale(14)),
+                            Position = UDim2.new(1, Scale(-20), 0.5, Scale(-7)),
+                            Image = Config.ChevronImage,
+                            Rotation = 0
+                        }, {ImageColor3 = "TextMain"})
+                        ApplyTextOptions(Button, Props)
+
+                        local Menu = CreateInstance("Frame", {
+                            Parent = Frame,
+                            BorderSizePixel = 0,
+                            Size = UDim2.new(1, 0, 0, 0),
+                            Visible = false,
+                            ClipsDescendants = true
+                        }, {BackgroundColor3 = "ElementBg"})
+                        CreateInstance("UICorner", {Parent = Menu, CornerRadius = UDim.new(0, Scale(4))})
+                        CreateInstance("UIStroke", {Parent = Menu, Thickness = 1}, {Color = "Border"})
+
+                        local Scroll = CreateInstance("ScrollingFrame", {
+                            Parent = Menu,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, Scale(-4), 1, Scale(-4)),
+                            Position = UDim2.new(0, Scale(2), 0, Scale(2)),
+                            AutomaticCanvasSize = Enum.AutomaticSize.Y,
+                            CanvasSize = UDim2.new(0, 0, 0, 0),
+                            ScrollBarThickness = 2,
+                            Active = true,
+                            ScrollingDirection = Enum.ScrollingDirection.Y,
+                            ScrollingEnabled = true
+                        })
+
+                        CreateInstance("UIListLayout", {
+                            Parent = Scroll,
+                            Padding = UDim.new(0, Scale(2))
+                        })
+
+                        local MultiSelectFunctions = {}
+
+                        local function FormatSelectedText()
+                            local SelectedLabels = {}
+                            for _, Option in ipairs(Options) do
+                                local Label, Value = NormalizeOption(Option)
+                                if SelectedMap[Value] then
+                                    table.insert(SelectedLabels, Label)
+                                end
+                            end
+                            if #SelectedLabels == 0 then
+                                return " " .. (Props.Placeholder or "Select...")
+                            end
+                            return " " .. table.concat(SelectedLabels, ", ")
+                        end
+
+                        local function UpdateButtonStates()
+                            Button.Text = FormatSelectedText()
+                            for _, Ref in ipairs(OptionButtons) do
+                                local IsSelected = SelectedMap[Ref.Value] == true
+                                TweenService:Create(Ref.Button, CreateTween(0.12), {
+                                    BackgroundColor3 = IsSelected and Config.Colors.Accent or Config.Colors.ElementBg,
+                                    TextColor3 = IsSelected and Config.Colors.TextLight or Config.Colors.TextMain
+                                }):Play()
+                            end
+                        end
+
+                        local function CloseMenu()
+                            MenuOpen = false
+                            TweenService:Create(Arrow, CreateTween(0.2), {Rotation = 0}):Play()
+                            TweenService:Create(Menu, CreateTween(0.2), {Size = UDim2.new(1, 0, 0, 0)}):Play()
+                            task.wait(0.2)
+                            Menu.Visible = false
+                            Library.ActivePopup = nil
+                        end
+
+                        local function OpenMenu()
+                            Library:ClosePopups()
+                            MenuOpen = true
+                            Menu.Visible = true
+                            TweenService:Create(Arrow, CreateTween(0.2), {Rotation = 180}):Play()
+                            local MaxHeight = math.min(#Options * Scale(24) + Scale(4), Scale(140))
+                            TweenService:Create(Menu, CreateTween(0.2), {Size = UDim2.new(1, 0, 0, MaxHeight)}):Play()
+                            RegisterPopup({
+                                Element = Menu,
+                                Ignore = {Button},
+                                Close = CloseMenu,
+                                ScrollLock = SectionContainer
+                            })
+                        end
+
+                        local function Rebuild()
+                            for _, Ref in ipairs(OptionButtons) do
+                                if Ref.Button.Parent then
+                                    Ref.Button:Destroy()
+                                end
+                            end
+                            table.clear(OptionButtons)
+
+                            for _, Option in ipairs(Options) do
+                                local Label, Value = NormalizeOption(Option)
+                                local OptionButton = CreateInstance("TextButton", {
+                                    Parent = Scroll,
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(1, 0, 0, Scale(22)),
+                                    FontFace = Config.Font,
+                                    TextSize = Scale(11),
+                                    Text = " " .. Label,
+                                    TextXAlignment = Enum.TextXAlignment.Left,
+                                    AutoButtonColor = false
+                                }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextMain"})
+
+                                OptionButton.MouseButton1Click:Connect(function()
+                                    SelectedMap[Value] = not SelectedMap[Value]
+                                    UpdateButtonStates()
+                                    if Props.Callback then
+                                        Props.Callback(CloneSelection())
+                                    end
+                                end)
+
+                                table.insert(InteractiveTargets, OptionButton)
+                                table.insert(OptionButtons, {
+                                    Button = OptionButton,
+                                    Value = Value,
+                                    Label = Label
+                                })
+                            end
+
+                            UpdateButtonStates()
+                        end
+
+                        Button.MouseButton1Click:Connect(function()
+                            if MenuOpen then
+                                CloseMenu()
+                            else
+                                OpenMenu()
+                            end
+                        end)
+
+                        Button.MouseEnter:Connect(function()
+                            TweenService:Create(ButtonStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                        end)
+                        Button.MouseLeave:Connect(function()
+                            TweenService:Create(ButtonStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                        end)
+
+                        function MultiSelectFunctions:SetValue(Values)
+                            table.clear(SelectedMap)
+                            if type(Values) == "table" then
+                                for _, Value in ipairs(Values) do
+                                    SelectedMap[Value] = true
+                                end
+                            end
+                            UpdateButtonStates()
+                            if Props.Callback then
+                                Props.Callback(CloneSelection())
+                            end
+                        end
+
+                        function MultiSelectFunctions:GetValue()
+                            return CloneSelection()
+                        end
+
+                        function MultiSelectFunctions:SetOptions(NewOptions)
+                            Options = NewOptions or {}
+                            Rebuild()
+                        end
+
+                        MultiSelectFunctions.DefaultValue = Props.Default or {}
+                        MultiSelectFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
+                        MultiSelectFunctions.Serialize = function(Value)
+                            return Value
+                        end
+                        MultiSelectFunctions.Deserialize = function(Value)
+                            return type(Value) == "table" and Value or {}
+                        end
+
+                        Rebuild()
+                        if type(Props.Default) == "table" then
+                            MultiSelectFunctions:SetValue(Props.Default)
+                        else
+                            UpdateButtonStates()
+                        end
+
+                        AttachControlStateApi(MultiSelectFunctions, {
+                            Root = Frame,
+                            Interactive = {Button},
+                            TextTargets = {Button},
+                            Tooltip = Props.Tooltip,
+                            SetDisabledState = function(Disabled)
+                                if Disabled and MenuOpen then
+                                    CloseMenu()
+                                end
+                            end
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = MultiSelectFunctions
+                        end
+                        return MultiSelectFunctions
+                    end
+
+                    function SectionFunctions:Stepper(Props)
+                        Props = Props or {}
+                        local Step = tonumber(Props.Step) or 1
+                        local MinValue = tonumber(Props.Min)
+                        local MaxValue = tonumber(Props.Max)
+                        local CurrentValue = tonumber(Props.Default)
+                        if CurrentValue == nil then
+                            CurrentValue = MinValue or 0
+                        end
+                        local Decimals = Props.Decimal
+                        if Decimals == nil then
+                            local Text = string.format("%.10f", Step)
+                            local Trimmed = Text:gsub("0+$", "")
+                            local DecimalsText = Trimmed:match("%.(%d+)")
+                            Decimals = DecimalsText and #DecimalsText or 0
+                        end
+                        local Mult = 10 ^ Decimals
+                        local Format = "%." .. Decimals .. "f"
+                        local Prefix = Props.Prefix or ""
+                        local Suffix = Props.Suffix or ""
+
+                        local Frame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(24))
+                        })
+
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = Frame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Stepper",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, Scale(-100), 1, 0)
+                        }, {TextColor3 = "TextMain"})
+                        ApplyTextOptions(Title, Props)
+
+                        local function MakeButton(Text, Position)
+                            local Btn = CreateInstance("TextButton", {
+                                Parent = Frame,
+                                AnchorPoint = Vector2.new(1, 0),
+                                Position = Position,
+                                Size = UDim2.new(0, Scale(22), 1, 0),
+                                BorderSizePixel = 0,
+                                Text = Text,
+                                FontFace = Config.Font,
+                                TextSize = Scale(12),
+                                AutoButtonColor = false
+                            }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
+                            CreateInstance("UICorner", {Parent = Btn, CornerRadius = UDim.new(0, Scale(4))})
+                            return Btn
+                        end
+
+                        local MinusButton = MakeButton("-", UDim2.new(1, Scale(-62), 0, 0))
+                        local PlusButton = MakeButton("+", UDim2.new(1, 0, 0, 0))
+                        local ValueLabel = CreateInstance("TextLabel", {
+                            Parent = Frame,
+                            BackgroundTransparency = 1,
+                            AnchorPoint = Vector2.new(1, 0),
+                            Position = UDim2.new(1, Scale(-30), 0, 0),
+                            Size = UDim2.new(0, Scale(28), 1, 0),
+                            Text = "",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Center
+                        }, {TextColor3 = "TextLight"})
+
+                        local StepperFunctions = {}
+
+                        local function ClampValue(Value)
+                            local Numeric = tonumber(Value) or CurrentValue
+                            if MinValue ~= nil then
+                                Numeric = math.max(Numeric, MinValue)
+                            end
+                            if MaxValue ~= nil then
+                                Numeric = math.min(Numeric, MaxValue)
+                            end
+                            return math.floor(Numeric * Mult + 0.5) / Mult
+                        end
+
+                        local function Refresh()
+                            ValueLabel.Text = Prefix .. string.format(Format, CurrentValue) .. Suffix
+                        end
+
+                        function StepperFunctions:SetValue(Value)
+                            CurrentValue = ClampValue(Value)
+                            Refresh()
+                            if Props.Callback then
+                                Props.Callback(CurrentValue)
+                            end
+                        end
+
+                        function StepperFunctions:GetValue()
+                            return CurrentValue
+                        end
+
+                        MinusButton.MouseButton1Click:Connect(function()
+                            StepperFunctions:SetValue(CurrentValue - Step)
+                        end)
+                        PlusButton.MouseButton1Click:Connect(function()
+                            StepperFunctions:SetValue(CurrentValue + Step)
+                        end)
+
+                        StepperFunctions.DefaultValue = CurrentValue
+                        StepperFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
+                        Refresh()
+
+                        AttachControlStateApi(StepperFunctions, {
+                            Root = Frame,
+                            Interactive = {MinusButton, PlusButton},
+                            TextTargets = {ValueLabel},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = StepperFunctions
+                        end
+                        return StepperFunctions
+                    end
+
+                    function SectionFunctions:RangeInput(Props)
+                        Props = Props or {}
+                        local Step = tonumber(Props.Step)
+                        local MinLimit = tonumber(Props.Min)
+                        local MaxLimit = tonumber(Props.Max)
+                        local Decimals = Props.Decimal
+                        if Decimals == nil then
+                            local Basis = Step or 1
+                            local Text = string.format("%.10f", Basis)
+                            local Trimmed = Text:gsub("0+$", "")
+                            local DecimalsText = Trimmed:match("%.(%d+)")
+                            Decimals = DecimalsText and #DecimalsText or 0
+                        end
+                        local Mult = 10 ^ Decimals
+                        local Format = "%." .. Decimals .. "f"
+                        local Prefix = Props.Prefix or ""
+                        local Suffix = Props.Suffix or ""
+
+                        local Default = Props.Default
+                        local CurrentMin = Props.DefaultMin
+                        local CurrentMax = Props.DefaultMax
+                        if type(Default) == "table" then
+                            CurrentMin = CurrentMin ~= nil and CurrentMin or Default.Min or Default[1]
+                            CurrentMax = CurrentMax ~= nil and CurrentMax or Default.Max or Default[2]
+                        end
+                        if CurrentMin == nil then
+                            CurrentMin = MinLimit or 0
+                        end
+                        if CurrentMax == nil then
+                            CurrentMax = MaxLimit or CurrentMin
+                        end
+
+                        local Frame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(40))
+                        })
+
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = Frame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Range Input",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, Scale(16))
+                        }, {TextColor3 = "TextMain"})
+                        ApplyTextOptions(Title, Props)
+
+                        local function CreateBox(Position)
+                            local Container = CreateInstance("Frame", {
+                                Parent = Frame,
+                                BorderSizePixel = 0,
+                                Position = Position,
+                                Size = UDim2.new(0.5, Scale(-6), 0, Scale(22))
+                            }, {BackgroundColor3 = "ElementBg"})
+                            CreateInstance("UICorner", {Parent = Container, CornerRadius = UDim.new(0, Scale(4))})
+                            local Stroke = CreateInstance("UIStroke", {Parent = Container, Thickness = 1}, {Color = "Border"})
+                            local Box = CreateInstance("TextBox", {
+                                Parent = Container,
+                                BackgroundTransparency = 1,
+                                Size = UDim2.new(1, Scale(-10), 1, 0),
+                                Position = UDim2.new(0, Scale(5), 0, 0),
+                                FontFace = Config.Font,
+                                TextSize = Scale(11),
+                                Text = "",
+                                ClearTextOnFocus = false,
+                                TextXAlignment = Enum.TextXAlignment.Left
+                            }, {TextColor3 = "TextLight"})
+                            return Container, Stroke, Box
+                        end
+
+                        local _, MinStroke, MinBox = CreateBox(UDim2.new(0, 0, 0, Scale(18)))
+                        local _, MaxStroke, MaxBox = CreateBox(UDim2.new(0.5, Scale(12), 0, Scale(18)))
+
+                        local RangeInputFunctions = {}
+
+                        local function ParseNumeric(Text)
+                            local ValueText = tostring(Text or "")
+                            if Prefix ~= "" then
+                                ValueText = ValueText:gsub("^" .. EscapeLuaPattern(Prefix), "")
+                            end
+                            if Suffix ~= "" then
+                                ValueText = ValueText:gsub(EscapeLuaPattern(Suffix) .. "$", "")
+                            end
+                            return tonumber(ValueText)
+                        end
+
+                        local function ClampValue(Value)
+                            local Numeric = tonumber(Value) or 0
+                            if Step and Step > 0 then
+                                local Base = MinLimit or 0
+                                local Relative = (Numeric - Base) / Step
+                                Numeric = Base + (math.floor(Relative + 0.5) * Step)
+                            end
+                            if MinLimit ~= nil then
+                                Numeric = math.max(Numeric, MinLimit)
+                            end
+                            if MaxLimit ~= nil then
+                                Numeric = math.min(Numeric, MaxLimit)
+                            end
+                            return math.floor(Numeric * Mult + 0.5) / Mult
+                        end
+
+                        local function Refresh()
+                            MinBox.Text = Prefix .. string.format(Format, CurrentMin) .. Suffix
+                            MaxBox.Text = Prefix .. string.format(Format, CurrentMax) .. Suffix
+                        end
+
+                        function RangeInputFunctions:SetValue(NewMin, NewMax)
+                            if type(NewMin) == "table" then
+                                NewMax = NewMin.Max or NewMin[2]
+                                NewMin = NewMin.Min or NewMin[1]
+                            end
+                            CurrentMin = ClampValue(NewMin ~= nil and NewMin or CurrentMin)
+                            CurrentMax = ClampValue(NewMax ~= nil and NewMax or CurrentMax)
+                            if CurrentMin > CurrentMax then
+                                CurrentMin, CurrentMax = CurrentMax, CurrentMin
+                            end
+                            Refresh()
+                            if Props.Callback then
+                                Props.Callback(CurrentMin, CurrentMax, {
+                                    Min = CurrentMin,
+                                    Max = CurrentMax
+                                })
+                            end
+                        end
+
+                        function RangeInputFunctions:GetValue()
+                            return {
+                                Min = CurrentMin,
+                                Max = CurrentMax
+                            }
+                        end
+
+                        local function CommitFromBox(IsMin)
+                            local RawValue = IsMin and MinBox.Text or MaxBox.Text
+                            local Numeric = ParseNumeric(RawValue)
+                            if IsMin then
+                                RangeInputFunctions:SetValue(Numeric, CurrentMax)
+                            else
+                                RangeInputFunctions:SetValue(CurrentMin, Numeric)
+                            end
+                        end
+
+                        MinBox.Focused:Connect(function()
+                            TweenService:Create(MinStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                        end)
+                        MaxBox.Focused:Connect(function()
+                            TweenService:Create(MaxStroke, CreateTween(0.2), {Color = Config.Colors.Accent}):Play()
+                        end)
+                        MinBox.FocusLost:Connect(function()
+                            TweenService:Create(MinStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                            CommitFromBox(true)
+                        end)
+                        MaxBox.FocusLost:Connect(function()
+                            TweenService:Create(MaxStroke, CreateTween(0.2), {Color = Config.Colors.Border}):Play()
+                            CommitFromBox(false)
+                        end)
+
+                        RangeInputFunctions.DefaultValue = {Min = CurrentMin, Max = CurrentMax}
+                        RangeInputFunctions.IncludeInConfig = Props.IncludeInConfig ~= false
+                        RangeInputFunctions.Serialize = function(Value)
+                            return {Min = Value.Min, Max = Value.Max}
+                        end
+                        RangeInputFunctions.Deserialize = function(Value)
+                            if type(Value) ~= "table" then
+                                return RangeInputFunctions.DefaultValue
+                            end
+                            return {
+                                Min = Value.Min or Value[1] or CurrentMin,
+                                Max = Value.Max or Value[2] or CurrentMax
+                            }
+                        end
+
+                        Refresh()
+
+                        AttachControlStateApi(RangeInputFunctions, {
+                            Root = Frame,
+                            Interactive = {MinBox, MaxBox},
+                            TextTargets = {MinBox, MaxBox},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = RangeInputFunctions
+                        end
+                        return RangeInputFunctions
+                    end
+
+                    function SectionFunctions:ButtonGroup(Props)
+                        Props = Props or {}
+                        local Buttons = Props.Buttons or {}
+                        local InteractiveTargets = {}
+
+                        local Frame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Scale(24))
+                        })
+
+                        local Layout = CreateInstance("UIListLayout", {
+                            Parent = Frame,
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            Padding = UDim.new(0, Scale(4))
+                        })
+
+                        local ButtonRefs = {}
+                        local GroupFunctions = {}
+
+                        local function Rebuild()
+                            for _, Ref in ipairs(ButtonRefs) do
+                                if Ref.Button.Parent then
+                                    Ref.Button:Destroy()
+                                end
+                            end
+                            table.clear(ButtonRefs)
+                            table.clear(InteractiveTargets)
+
+                            local Count = math.max(1, #Buttons)
+                            local TotalPadding = (Count - 1) * Scale(4)
+                            local WidthOffset = -(TotalPadding / Count)
+
+                            for Index, ButtonProps in ipairs(Buttons) do
+                                local Button = CreateInstance("TextButton", {
+                                    Parent = Frame,
+                                    Size = UDim2.new(1 / Count, WidthOffset, 1, 0),
+                                    BorderSizePixel = 0,
+                                    Text = tostring(ButtonProps.Text or ButtonProps.Title or ("Button " .. Index)),
+                                    FontFace = Config.Font,
+                                    TextSize = Scale(11),
+                                    AutoButtonColor = false
+                                }, {BackgroundColor3 = "ElementBg", TextColor3 = "TextLight"})
+                                CreateInstance("UICorner", {Parent = Button, CornerRadius = UDim.new(0, Scale(4))})
+                                CreateInstance("UIStroke", {Parent = Button, Thickness = 1}, {Color = "Border"})
+                                Button.MouseButton1Click:Connect(function()
+                                    if ButtonProps.Callback then
+                                        ButtonProps.Callback(ButtonProps.Value or Index, ButtonProps, Index)
+                                    end
+                                    if Props.Callback then
+                                        Props.Callback(ButtonProps.Value or Index, ButtonProps, Index)
+                                    end
+                                end)
+                                table.insert(ButtonRefs, {Button = Button, Props = ButtonProps})
+                                table.insert(InteractiveTargets, Button)
+                            end
+                        end
+
+                        function GroupFunctions:SetButtons(NewButtons)
+                            Buttons = NewButtons or {}
+                            Rebuild()
+                        end
+
+                        function GroupFunctions:GetButtons()
+                            return Buttons
+                        end
+
+                        Rebuild()
+
+                        AttachControlStateApi(GroupFunctions, {
+                            Root = Frame,
+                            Interactive = InteractiveTargets,
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = GroupFunctions
+                        end
+                        return GroupFunctions
+                    end
+
+                    function SectionFunctions:Accordion(Props)
+                        Props = Props or {}
+                        local Expanded = Props.DefaultExpanded ~= false
+
+                        local Frame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 0),
+                            AutomaticSize = Enum.AutomaticSize.Y
+                        })
+                        CreateInstance("UIListLayout", {
+                            Parent = Frame,
+                            FillDirection = Enum.FillDirection.Vertical,
+                            Padding = UDim.new(0, Scale(4))
+                        })
+
+                        local Header = CreateInstance("TextButton", {
+                            Parent = Frame,
+                            BorderSizePixel = 0,
+                            Size = UDim2.new(1, 0, 0, Scale(24)),
+                            Text = "",
+                            AutoButtonColor = false
+                        }, {BackgroundColor3 = "ElementBg"})
+                        CreateInstance("UICorner", {Parent = Header, CornerRadius = UDim.new(0, Scale(4))})
+                        CreateInstance("UIStroke", {Parent = Header, Thickness = 1}, {Color = "Border"})
+
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = Header,
+                            BackgroundTransparency = 1,
+                            Position = UDim2.new(0, Scale(8), 0, 0),
+                            Size = UDim2.new(1, Scale(-28), 1, 0),
+                            Text = Props.Title or "Accordion",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left
+                        }, {TextColor3 = "TextLight"})
+
+                        local Arrow = CreateInstance("ImageLabel", {
+                            Parent = Header,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(0, Scale(14), 0, Scale(14)),
+                            Position = UDim2.new(1, Scale(-20), 0.5, Scale(-7)),
+                            Image = Config.ChevronImage,
+                            Rotation = Expanded and 180 or 0
+                        }, {ImageColor3 = "TextMain"})
+
+                        local Body = CreateInstance("Frame", {
+                            Parent = Frame,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, 0),
+                            AutomaticSize = Enum.AutomaticSize.Y,
+                            Visible = Expanded
+                        })
+                        CreateInstance("UIListLayout", {
+                            Parent = Body,
+                            FillDirection = Enum.FillDirection.Vertical,
+                            Padding = UDim.new(0, Scale(4))
+                        })
+
+                        local AccordionFunctions = {}
+
+                        function AccordionFunctions:SetExpanded(Value)
+                            Expanded = Value and true or false
+                            Body.Visible = Expanded
+                            TweenService:Create(Arrow, CreateTween(0.15), {Rotation = Expanded and 180 or 0}):Play()
+                            if Props.Callback then
+                                Props.Callback(Expanded)
+                            end
+                        end
+
+                        function AccordionFunctions:ToggleExpanded()
+                            self:SetExpanded(not Expanded)
+                        end
+
+                        function AccordionFunctions:GetExpanded()
+                            return Expanded
+                        end
+
+                        function AccordionFunctions:GetContainer()
+                            return Body
+                        end
+
+                        Header.MouseButton1Click:Connect(function()
+                            AccordionFunctions:ToggleExpanded()
+                        end)
+
+                        AccordionFunctions.DefaultValue = Expanded
+                        AccordionFunctions.IncludeInConfig = Props.IncludeInConfig == true
+
+                        AttachControlStateApi(AccordionFunctions, {
+                            Root = Frame,
+                            Interactive = {Header},
+                            TextTargets = {Title},
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = AccordionFunctions
+                        end
+                        return AccordionFunctions
+                    end
+
+                    function SectionFunctions:MiniChart(Props)
+                        Props = Props or {}
+                        local Values = type(Props.Values) == "table" and table.clone(Props.Values) or {}
+                        local MaxPoints = Props.MaxPoints or 24
+                        local MinValue = Props.Min
+                        local MaxValue = Props.Max
+
+                        local Frame = CreateInstance("Frame", {
+                            Parent = ElementsContainer,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, 0, 0, Props.Height or Scale(60))
+                        })
+
+                        local Title = CreateInstance("TextLabel", {
+                            Parent = Frame,
+                            BackgroundTransparency = 1,
+                            Text = Props.Title or "Mini Chart",
+                            FontFace = Config.Font,
+                            TextSize = Scale(11),
+                            TextXAlignment = Enum.TextXAlignment.Left,
+                            Size = UDim2.new(1, 0, 0, Scale(16))
+                        }, {TextColor3 = "TextMain"})
+                        ApplyTextOptions(Title, Props)
+
+                        local ChartBg = CreateInstance("Frame", {
+                            Parent = Frame,
+                            BorderSizePixel = 0,
+                            Position = UDim2.new(0, 0, 0, Scale(18)),
+                            Size = UDim2.new(1, 0, 1, Scale(-18))
+                        }, {BackgroundColor3 = "ElementBg"})
+                        CreateInstance("UICorner", {Parent = ChartBg, CornerRadius = UDim.new(0, Scale(4))})
+                        CreateInstance("UIStroke", {Parent = ChartBg, Thickness = 1}, {Color = "Border"})
+
+                        local Bars = CreateInstance("Frame", {
+                            Parent = ChartBg,
+                            BackgroundTransparency = 1,
+                            Size = UDim2.new(1, Scale(-8), 1, Scale(-8)),
+                            Position = UDim2.new(0, Scale(4), 0, Scale(4))
+                        })
+                        local Layout = CreateInstance("UIListLayout", {
+                            Parent = Bars,
+                            FillDirection = Enum.FillDirection.Horizontal,
+                            HorizontalAlignment = Enum.HorizontalAlignment.Left,
+                            VerticalAlignment = Enum.VerticalAlignment.Bottom,
+                            Padding = UDim.new(0, Scale(2))
+                        })
+
+                        local ChartFunctions = {}
+                        local BarRefs = {}
+
+                        local function ResolveBounds()
+                            local LocalMin = MinValue
+                            local LocalMax = MaxValue
+                            if #Values == 0 then
+                                LocalMin = LocalMin or 0
+                                LocalMax = LocalMax or 1
+                            else
+                                for _, Value in ipairs(Values) do
+                                    LocalMin = LocalMin == nil and Value or math.min(LocalMin, Value)
+                                    LocalMax = LocalMax == nil and Value or math.max(LocalMax, Value)
+                                end
+                            end
+                            if LocalMin == LocalMax then
+                                LocalMax = LocalMin + 1
+                            end
+                            return LocalMin, LocalMax
+                        end
+
+                        local function Rebuild()
+                            for _, Bar in ipairs(BarRefs) do
+                                if Bar.Parent then
+                                    Bar:Destroy()
+                                end
+                            end
+                            table.clear(BarRefs)
+
+                            local Count = math.max(1, #Values)
+                            local TotalPadding = math.max(0, Count - 1) * Scale(2)
+                            local WidthOffset = -(TotalPadding / Count)
+                            local Lower, Upper = ResolveBounds()
+
+                            for _, Value in ipairs(Values) do
+                                local HeightScale = math.clamp((Value - Lower) / (Upper - Lower), 0.05, 1)
+                                local Bar = CreateInstance("Frame", {
+                                    Parent = Bars,
+                                    BorderSizePixel = 0,
+                                    Size = UDim2.new(1 / Count, WidthOffset, HeightScale, 0)
+                                }, {BackgroundColor3 = "Accent"})
+                                CreateInstance("UICorner", {Parent = Bar, CornerRadius = UDim.new(0, Scale(2))})
+                                table.insert(BarRefs, Bar)
+                            end
+                        end
+
+                        function ChartFunctions:SetValues(NewValues)
+                            Values = type(NewValues) == "table" and table.clone(NewValues) or {}
+                            while #Values > MaxPoints do
+                                table.remove(Values, 1)
+                            end
+                            Rebuild()
+                        end
+
+                        function ChartFunctions:AddValue(Value)
+                            table.insert(Values, tonumber(Value) or 0)
+                            while #Values > MaxPoints do
+                                table.remove(Values, 1)
+                            end
+                            Rebuild()
+                        end
+
+                        function ChartFunctions:GetValue()
+                            return Values
+                        end
+
+                        ChartFunctions.DefaultValue = Values
+                        ChartFunctions.IncludeInConfig = Props.IncludeInConfig == true
+                        Rebuild()
+
+                        AttachControlStateApi(ChartFunctions, {
+                            Root = Frame,
+                            Tooltip = Props.Tooltip
+                        })
+
+                        if Props.Flag then
+                            Library.Flags[Props.Flag] = ChartFunctions
+                        end
+                        return ChartFunctions
                     end
 
                     -- ENHANCED GRID - With Search, ViewportFrame Support, and Virtual Scrolling
